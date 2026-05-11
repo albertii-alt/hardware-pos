@@ -1,25 +1,20 @@
 # ── Database credentials ──────────────────────────────────────────────────────
-# If you ever extract db config to a separate file, ignore it here
-db.config.php
+config/database.php
 .env
 
 # ── Storage: backups ──────────────────────────────────────────────────────────
-# Never commit database dumps — they contain real customer/business data
 storage/backups/*.sql
 storage/backups/*.sql.gz
 
 # ── Storage: logs ─────────────────────────────────────────────────────────────
 storage/logs/*.log
 
-# Keep the directory structure but not the files
+# Keep directory structure
 !storage/backups/.gitkeep
 !storage/logs/.gitkeep
 
 # ── Storage: raw geographic JSON data ─────────────────────────────────────────
-# Large source files used only for the one-time import script
 storage/data/ph-json/*.json
-
-# Keep references file (documents data source)
 !storage/data/ph-json/references.txt
 
 # ── OS & editor junk ──────────────────────────────────────────────────────────

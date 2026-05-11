@@ -10,7 +10,8 @@
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 define('BASE', dirname(__DIR__));
-require_once BASE . '/db.php';
+if (!defined('APP_ROOT')) define('APP_ROOT', BASE);
+require_once BASE . '/app/bootstrap.php';
 
 $isCli = PHP_SAPI === 'cli';
 

@@ -33,7 +33,7 @@ class OrderRepository
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "completed")'
         );
         $stmt->bind_param(
-            'isdssiisddsd s',
+            'isdssiisddsds',
             $customerId, $deliveryType, $deliveryFee, $deliveryAddress, $deliveryStatus,
             $municipalityId, $barangayId,
             $paymentMethod, $amountTendered, $changeDue, $referenceNumber, $totalAmount,
@@ -44,6 +44,14 @@ class OrderRepository
         }
         $id = $stmt->insert_id;
         $stmt->close();
+
+        // Generate order_code in PHP (trigger not used — avoids MySQL same-table update restriction)
+        $code = 'LPO-' . date('Ymd') . '-' . str_pad($id, 6, '0', STR_PAD_LEFT);
+        $upd  = $this->conn->prepare('UPDATE orders SET order_code = ? WHERE id = ?');
+        $upd->bind_param('si', $code, $id);
+        $upd->execute();
+        $upd->close();
+
         return $id;
     }
 

@@ -11,7 +11,7 @@ class BackupService
 
     public function __construct()
     {
-        $this->backupDir  = __DIR__ . '/../../storage/backups';
+        $this->backupDir  = APP_ROOT . '/storage/backups';
         $this->user       = 'root';
         $this->pass       = '';
         $this->db         = 'lumina_pos';
