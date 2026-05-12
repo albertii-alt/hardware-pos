@@ -68,6 +68,7 @@ function navLink(string $href, string $icon, string $label, string $active = '')
 
     <!-- ACCOUNT — visible to all -->
     <div class="nav-section-label">Account</div>
+    <?php navLink('change_password.php', 'bi-key', 'Change Password', isActive('change_password.php')) ?>
     <?php navLink('logout.php', 'bi-box-arrow-right', 'Logout') ?>
 
   </nav>

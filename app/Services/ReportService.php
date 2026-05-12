@@ -259,6 +259,300 @@ class ReportService
         ];
     }
 
+    // ── Phase 7B: Profit Analytics ─────────────────────────────────────────────
+
+    public function getProfitTrendLast30Days(): array
+    {
+        $stmt = $this->conn->prepare(
+            'SELECT DATE(o.order_date) AS day,
+                    COALESCE(SUM(o.total_amount), 0)                        AS revenue,
+                    COALESCE(SUM(oi.quantity * COALESCE(p.cost_price, 0)), 0) AS cost
+             FROM orders o
+             JOIN order_items oi ON oi.order_id = o.id
+             JOIN products    p  ON p.id = oi.product_id
+             WHERE o.order_date >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+               AND o.status = "completed"
+             GROUP BY DATE(o.order_date)
+             ORDER BY day ASC'
+        );
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+
+        // Fill missing days with zero
+        $map = [];
+        foreach ($rows as $r) $map[$r['day']] = $r;
+        $result = [];
+        for ($i = 29; $i >= 0; $i--) {
+            $d = date('Y-m-d', strtotime("-$i days"));
+            $result[] = [
+                'label'  => date('M d', strtotime($d)),
+                'profit' => isset($map[$d]) ? (float)$map[$d]['revenue'] - (float)$map[$d]['cost'] : 0.0,
+            ];
+        }
+        return $result;
+    }
+
+    public function getTopProfitableProducts(int $limit = 10): array
+    {
+        $monthStart = date('Y-m-01') . ' 00:00:00';
+        $monthEnd   = date('Y-m-t')  . ' 23:59:59';
+        $stmt = $this->conn->prepare(
+            'SELECT p.name, p.sku,
+                    SUM(oi.total)                                AS revenue,
+                    SUM(oi.quantity * COALESCE(p.cost_price,0)) AS cost,
+                    SUM(oi.total) - SUM(oi.quantity * COALESCE(p.cost_price,0)) AS profit
+             FROM order_items oi
+             JOIN orders   o ON o.id = oi.order_id
+             JOIN products p ON p.id = oi.product_id
+             WHERE o.order_date BETWEEN ? AND ? AND o.status = "completed"
+             GROUP BY p.id, p.name, p.sku
+             ORDER BY profit DESC
+             LIMIT ?'
+        );
+        $stmt->bind_param('ssi', $monthStart, $monthEnd, $limit);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        return $rows;
+    }
+
+    public function getLeastProfitableProducts(int $limit = 10): array
+    {
+        $monthStart = date('Y-m-01') . ' 00:00:00';
+        $monthEnd   = date('Y-m-t')  . ' 23:59:59';
+        $stmt = $this->conn->prepare(
+            'SELECT p.name, p.sku,
+                    SUM(oi.total)                                AS revenue,
+                    SUM(oi.quantity * COALESCE(p.cost_price,0)) AS cost,
+                    SUM(oi.total) - SUM(oi.quantity * COALESCE(p.cost_price,0)) AS profit
+             FROM order_items oi
+             JOIN orders   o ON o.id = oi.order_id
+             JOIN products p ON p.id = oi.product_id
+             WHERE o.order_date BETWEEN ? AND ? AND o.status = "completed"
+             GROUP BY p.id, p.name, p.sku
+             ORDER BY profit ASC
+             LIMIT ?'
+        );
+        $stmt->bind_param('ssi', $monthStart, $monthEnd, $limit);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        return $rows;
+    }
+
+    public function getProfitMarginsSummary(): array
+    {
+        $monthStart = date('Y-m-01') . ' 00:00:00';
+        $monthEnd   = date('Y-m-t')  . ' 23:59:59';
+
+        $stmt = $this->conn->prepare(
+            'SELECT
+                COALESCE(SUM(o.total_amount), 0)                          AS gross_revenue,
+                COALESCE(SUM(oi.quantity * COALESCE(p.cost_price, 0)), 0) AS total_cost
+             FROM orders o
+             JOIN order_items oi ON oi.order_id = o.id
+             JOIN products    p  ON p.id = oi.product_id
+             WHERE o.order_date BETWEEN ? AND ? AND o.status = "completed"'
+        );
+        $stmt->bind_param('ss', $monthStart, $monthEnd);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        $revenue = (float)$row['gross_revenue'];
+        $cost    = (float)$row['total_cost'];
+        $profit  = $revenue - $cost;
+        $margin  = $revenue > 0 ? round(($profit / $revenue) * 100, 1) : 0.0;
+
+        // Highest / lowest single-day profit this month
+        $stmt2 = $this->conn->prepare(
+            'SELECT DATE(o.order_date) AS day,
+                    SUM(o.total_amount) - SUM(oi.quantity * COALESCE(p.cost_price,0)) AS day_profit
+             FROM orders o
+             JOIN order_items oi ON oi.order_id = o.id
+             JOIN products    p  ON p.id = oi.product_id
+             WHERE o.order_date BETWEEN ? AND ? AND o.status = "completed"
+             GROUP BY DATE(o.order_date)
+             ORDER BY day_profit DESC'
+        );
+        $stmt2->bind_param('ss', $monthStart, $monthEnd);
+        $stmt2->execute();
+        $days = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt2->close();
+
+        return [
+            'gross_revenue'       => $revenue,
+            'total_cost'          => $cost,
+            'gross_profit'        => $profit,
+            'profit_margin_pct'   => $margin,
+            'highest_day_profit'  => !empty($days) ? (float)$days[0]['day_profit']  : 0.0,
+            'lowest_day_profit'   => !empty($days) ? (float)end($days)['day_profit'] : 0.0,
+        ];
+    }
+
+    // ── Phase 7B: Inventory Intelligence ─────────────────────────────────────────
+
+    public function getDeadStockProducts(): array
+    {
+        $cutoff = date('Y-m-d H:i:s', strtotime('-60 days'));
+        $stmt = $this->conn->prepare(
+            'SELECT p.id, p.sku, p.name, p.category, p.stock,
+                    p.stock * COALESCE(p.cost_price, 0) AS stock_value
+             FROM products p
+             WHERE p.stock > 0
+               AND p.deleted = 0 AND p.deleted_at IS NULL
+               AND p.id NOT IN (
+                   SELECT DISTINCT oi.product_id
+                   FROM order_items oi
+                   JOIN orders o ON o.id = oi.order_id
+                   WHERE o.order_date >= ? AND o.status = "completed"
+               )
+             ORDER BY stock_value DESC'
+        );
+        $stmt->bind_param('s', $cutoff);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        return $rows;
+    }
+
+    public function getFastMovingProducts(int $limit = 10): array
+    {
+        $cutoff = date('Y-m-d H:i:s', strtotime('-30 days'));
+        $stmt = $this->conn->prepare(
+            'SELECT p.name, p.sku, p.category,
+                    SUM(oi.quantity) AS total_qty
+             FROM order_items oi
+             JOIN orders   o ON o.id = oi.order_id
+             JOIN products p ON p.id = oi.product_id
+             WHERE o.order_date >= ? AND o.status = "completed"
+               AND p.deleted = 0 AND p.deleted_at IS NULL
+             GROUP BY p.id, p.name, p.sku, p.category
+             ORDER BY total_qty DESC
+             LIMIT ?'
+        );
+        $stmt->bind_param('si', $cutoff, $limit);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        return $rows;
+    }
+
+    public function getInventoryValuation(): array
+    {
+        $stmt = $this->conn->prepare(
+            'SELECT
+                COUNT(*)                                              AS total_products,
+                SUM(stock)                                            AS total_units,
+                COALESCE(SUM(stock * COALESCE(cost_price, 0)), 0)    AS cost_value,
+                COALESCE(SUM(stock * COALESCE(selling_price, 0)), 0) AS retail_value
+             FROM products
+             WHERE deleted = 0 AND deleted_at IS NULL AND stock > 0'
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $row;
+    }
+
+    public function getStockRiskProducts(): array
+    {
+        $cutoff = date('Y-m-d H:i:s', strtotime('-14 days'));
+        $stmt = $this->conn->prepare(
+            'SELECT p.id, p.sku, p.name, p.category, p.stock, p.min_stock_alert,
+                    COALESCE(SUM(oi.quantity), 0) AS sold_last_14
+             FROM products p
+             LEFT JOIN order_items oi ON oi.product_id = p.id
+             LEFT JOIN orders      o  ON o.id = oi.order_id
+                 AND o.order_date >= ? AND o.status = "completed"
+             WHERE p.stock <= p.min_stock_alert
+               AND p.deleted = 0 AND p.deleted_at IS NULL
+             GROUP BY p.id, p.sku, p.name, p.category, p.stock, p.min_stock_alert
+             HAVING sold_last_14 > 0
+             ORDER BY sold_last_14 DESC'
+        );
+        $stmt->bind_param('s', $cutoff);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        return $rows;
+    }
+
+    // ── Phase 7B: Delivery Performance ───────────────────────────────────────────
+
+    public function getDeliveryCompletionStats(): array
+    {
+        $stmt = $this->conn->prepare(
+            'SELECT
+                COUNT(*) AS total_deliveries,
+                SUM(delivery_status = "delivered")   AS delivered,
+                SUM(delivery_status = "cancelled")   AS cancelled,
+                SUM(delivery_status = "pending")     AS pending,
+                SUM(delivery_status = "out_for_delivery") AS out_for_delivery
+             FROM orders
+             WHERE delivery_type = "delivery" AND status = "completed"'
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        $total     = (int)$row['total_deliveries'];
+        $delivered = (int)$row['delivered'];
+        $row['success_rate_pct'] = $total > 0 ? round(($delivered / $total) * 100, 1) : 0.0;
+        return $row;
+    }
+
+    public function getAverageDeliveryTime(): float
+    {
+        $stmt = $this->conn->prepare(
+            'SELECT AVG(TIMESTAMPDIFF(HOUR, order_date, delivery_status_updated_at)) AS avg_hours
+             FROM orders
+             WHERE delivery_type = "delivery"
+               AND delivery_status = "delivered"
+               AND delivery_status_updated_at IS NOT NULL
+               AND status = "completed"'
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return round((float)($row['avg_hours'] ?? 0), 1);
+    }
+
+    public function getMunicipalityDeliveryBreakdown(int $limit = 10): array
+    {
+        $stmt = $this->conn->prepare(
+            'SELECT COALESCE(m.municipality, "Unknown") AS municipality,
+                    COUNT(*) AS total,
+                    SUM(o.delivery_status = "delivered") AS delivered
+             FROM orders o
+             LEFT JOIN municipalities m ON m.id = o.municipality_id
+             WHERE o.delivery_type = "delivery" AND o.status = "completed"
+             GROUP BY o.municipality_id, m.municipality
+             ORDER BY total DESC
+             LIMIT ?'
+        );
+        $stmt->bind_param('i', $limit);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        return $rows;
+    }
+
+    public function getDeliveryStatusDistribution(): array
+    {
+        $stmt = $this->conn->prepare(
+            'SELECT delivery_status, COUNT(*) AS cnt
+             FROM orders
+             WHERE delivery_type = "delivery" AND status = "completed"
+             GROUP BY delivery_status'
+        );
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        return $rows;
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private function todayRange(): array

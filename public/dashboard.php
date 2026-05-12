@@ -3,6 +3,7 @@ require_once __DIR__ . '/../app/bootstrap.php';
 requireRole('owner');
 
 require_once APP_ROOT . '/app/Services/ReportService.php';
+require_once APP_ROOT . '/app/Services/InsightService.php';
 
 $today      = date('Y-m-d');
 $monthStart = date('Y-m-01');
@@ -22,6 +23,20 @@ $paymentBreakdown = $report->getPaymentMethodBreakdown();
 $monthlyTrend     = $report->getMonthlyRevenueTrend();
 $topProducts      = $report->getTopSellingProductsChart(5);
 $insights         = $report->getDashboardInsights();
+
+// Phase 7B data
+$profitMargins       = $report->getProfitMarginsSummary();
+$profitTrend30       = $report->getProfitTrendLast30Days();
+$topProfitable       = $report->getTopProfitableProducts(8);
+$inventoryValuation  = $report->getInventoryValuation();
+$fastMoving          = $report->getFastMovingProducts(8);
+$deadStock           = $report->getDeadStockProducts();
+$stockRisk           = $report->getStockRiskProducts();
+$deliveryStats       = $report->getDeliveryCompletionStats();
+$deliveryStatusDist  = $report->getDeliveryStatusDistribution();
+$muniBreakdown       = $report->getMunicipalityDeliveryBreakdown(8);
+$insightSvc          = new InsightService($conn, $report);
+$smartInsights       = $insightSvc->generateInsights();
 
 $conn->close();
 
@@ -263,37 +278,6 @@ layoutStart('Lumina POS – Dashboard');
       </div>
     </div>
 
-  </div>
-
-  <!-- System Health -->
-  <div class="section-title"><i class="bi bi-heart-pulse"></i> System Health</div>
-  <div class="card shadow-sm mb-4">
-    <div class="card-body py-3">
-      <?php
-        $backupDir  = APP_ROOT . '/storage/backups';
-        $logsDir    = APP_ROOT . '/storage/logs';
-        $dbOk       = false;
-        try { $hc = getConnection(); $hc->query('SELECT 1'); $hc->close(); $dbOk = true; } catch(Exception $e) {}
-        $checks = [
-          ['PHP Version',          PHP_VERSION,                                                    true],
-          ['MySQL Connection',     $dbOk ? 'OK' : 'Failed',                                       $dbOk],
-          ['Backup Dir Writable',  is_writable($backupDir) ? 'Writable' : 'Not writable / missing', is_writable($backupDir)],
-          ['Logs Dir Writable',    is_writable($logsDir)   ? 'Writable' : 'Not writable / missing', is_writable($logsDir)],
-          ['Server Time',          date('Y-m-d H:i:s'),                                           true],
-        ];
-      ?>
-      <div class="row g-2">
-        <?php foreach ($checks as [$label, $value, $ok]): ?>
-        <div class="col-sm-6 col-md-4">
-          <div class="d-flex align-items-center gap-2">
-            <i class="bi <?= $ok ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger' ?>"></i>
-            <span class="text-muted small"><?= htmlspecialchars($label) ?>:</span>
-            <span class="small fw-semibold"><?= htmlspecialchars($value) ?></span>
-          </div>
-        </div>
-        <?php endforeach; ?>
-      </div>
-    </div>
   </div>
 
   <div class="text-muted small text-end mb-4">
@@ -542,5 +526,354 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
 });
+</script>
+
+<?php
+// ── Phase 7B: Profit Intelligence Row ────────────────────────────────────────
+$delivSuccessRate = (float)$deliveryStats['success_rate_pct'];
+$retailVal        = (float)$inventoryValuation['retail_value'];
+?>
+
+<div class="container-fluid px-4">
+
+  <!-- A. Profit Intelligence Cards -->
+  <div class="section-title mt-2"><i class="bi bi-graph-up"></i> Profit Intelligence — <?= date('F Y') ?></div>
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm stat-card profit h-100">
+        <div class="card-body py-3">
+          <div class="text-muted small mb-1"><i class="bi bi-cash-stack me-1"></i>Gross Profit (Month)</div>
+          <div class="fs-4 fw-bold <?= $profitMargins['gross_profit'] < 0 ? 'text-danger' : '' ?>">
+            &#8369;<?= number_format($profitMargins['gross_profit'], 2) ?>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm stat-card revenue h-100">
+        <div class="card-body py-3">
+          <div class="text-muted small mb-1"><i class="bi bi-percent me-1"></i>Profit Margin</div>
+          <div class="fs-4 fw-bold <?= $profitMargins['profit_margin_pct'] < 10 ? 'text-danger' : 'text-success' ?>">
+            <?= $profitMargins['profit_margin_pct'] ?>%
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm stat-card orders h-100">
+        <div class="card-body py-3">
+          <div class="text-muted small mb-1"><i class="bi bi-boxes me-1"></i>Inventory Value (Retail)</div>
+          <div class="fs-4 fw-bold">&#8369;<?= number_format($retailVal, 2) ?></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm stat-card <?= $delivSuccessRate >= 90 ? 'profit' : ($delivSuccessRate < 70 ? 'cost' : 'revenue') ?> h-100">
+        <div class="card-body py-3">
+          <div class="text-muted small mb-1"><i class="bi bi-truck me-1"></i>Delivery Success Rate</div>
+          <div class="fs-4 fw-bold <?= $delivSuccessRate >= 90 ? 'text-success' : ($delivSuccessRate < 70 ? 'text-danger' : '') ?>">
+            <?= $delivSuccessRate ?>%
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B. Operational Charts Row 1: Profit Trend + Fast Moving -->
+  <div class="row g-4 mb-4">
+    <div class="col-lg-8">
+      <div class="card chart-card h-100">
+        <div class="card-header"><i class="bi bi-graph-up me-1"></i> 30-Day Profit Trend</div>
+        <div class="card-body">
+          <div class="chart-container-lg"><canvas id="chartProfitTrend"></canvas></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card chart-card h-100">
+        <div class="card-header"><i class="bi bi-lightning me-1"></i> Fast Moving Products (30 Days)</div>
+        <div class="card-body">
+          <div class="chart-container"><canvas id="chartFastMoving"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B. Operational Charts Row 2: Delivery Status + Municipality -->
+  <div class="row g-4 mb-4">
+    <div class="col-lg-4">
+      <div class="card chart-card h-100">
+        <div class="card-header"><i class="bi bi-pie-chart me-1"></i> Delivery Status Distribution</div>
+        <div class="card-body d-flex align-items-center justify-content-center">
+          <div class="chart-container"><canvas id="chartDeliveryStatus"></canvas></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-8">
+      <div class="card chart-card h-100">
+        <div class="card-header"><i class="bi bi-geo-alt me-1"></i> Deliveries by Municipality</div>
+        <div class="card-body">
+          <div class="chart-container"><canvas id="chartMuniDelivery"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C. Smart Business Insights -->
+  <div class="section-title"><i class="bi bi-lightbulb"></i> Smart Business Insights</div>
+  <div class="row g-3 mb-4">
+    <?php if (empty($smartInsights)): ?>
+    <div class="col-12">
+      <div class="alert alert-secondary py-2 mb-0">Not enough data to generate insights yet.</div>
+    </div>
+    <?php else: ?>
+    <?php foreach ($smartInsights as $ins):
+      $borderMap = ['success'=>'#198754','warning'=>'#ffc107','info'=>'#0d6efd','danger'=>'#dc3545'];
+      $border    = $borderMap[$ins['type']] ?? '#6c757d';
+      $textMap   = ['success'=>'text-success','warning'=>'text-warning','info'=>'text-primary','danger'=>'text-danger'];
+      $textCls   = $textMap[$ins['type']] ?? 'text-secondary';
+    ?>
+    <div class="col-md-6 col-lg-4">
+      <div class="card shadow-sm h-100" style="border-left:3px solid <?= $border ?>">
+        <div class="card-body py-3 d-flex align-items-start gap-2">
+          <i class="bi <?= htmlspecialchars($ins['icon']) ?> fs-5 <?= $textCls ?> flex-shrink-0 mt-1"></i>
+          <span style="font-size:.875rem"><?= htmlspecialchars($ins['message']) ?></span>
+        </div>
+      </div>
+    </div>
+    <?php endforeach; ?>
+    <?php endif; ?>
+  </div>
+
+  <!-- D. Inventory Risk Table -->
+  <div class="section-title"><i class="bi bi-exclamation-octagon"></i> Inventory Risk — Active Demand</div>
+  <div class="card shadow-sm mb-4">
+    <?php if (empty($stockRisk)): ?>
+    <div class="card-body text-center text-success py-4">
+      <i class="bi bi-check-circle me-1"></i> No critical stock risk products detected.
+    </div>
+    <?php else: ?>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Product</th>
+            <th>Category</th>
+            <th class="text-center">Stock</th>
+            <th class="text-center">Min Alert</th>
+            <th class="text-center">Sold (14d)</th>
+            <th class="text-center">Risk</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($stockRisk as $p):
+            $isOut = (int)$p['stock'] === 0;
+          ?>
+          <tr class="<?= $isOut ? 'table-danger' : 'table-warning' ?>">
+            <td>
+              <div class="fw-semibold"><?= htmlspecialchars($p['name']) ?></div>
+              <div class="text-muted" style="font-size:.75rem"><?= htmlspecialchars($p['sku'] ?? '') ?></div>
+            </td>
+            <td class="text-muted"><?= htmlspecialchars($p['category'] ?? '—') ?></td>
+            <td class="text-center fw-bold <?= $isOut ? 'text-danger' : 'text-warning' ?>"><?= (int)$p['stock'] ?></td>
+            <td class="text-center text-muted"><?= (int)$p['min_stock_alert'] ?></td>
+            <td class="text-center fw-semibold"><?= (int)$p['sold_last_14'] ?></td>
+            <td class="text-center">
+              <span class="badge <?= $isOut ? 'bg-danger' : 'bg-warning text-dark' ?>">
+                <?= $isOut ? 'Out of Stock' : 'Low Stock' ?>
+              </span>
+            </td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+    <?php endif; ?>
+  </div>
+
+  <!-- Dead Stock Summary -->
+  <?php if (!empty($deadStock)): ?>
+  <div class="section-title"><i class="bi bi-archive"></i> Dead Stock (No Sales in 60+ Days)</div>
+  <div class="card shadow-sm mb-4">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Product</th>
+            <th>Category</th>
+            <th class="text-center">Stock</th>
+            <th class="text-end">Stock Value (Cost)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach (array_slice($deadStock, 0, 10) as $p): ?>
+          <tr>
+            <td>
+              <div class="fw-semibold"><?= htmlspecialchars($p['name']) ?></div>
+              <div class="text-muted" style="font-size:.75rem"><?= htmlspecialchars($p['sku'] ?? '') ?></div>
+            </td>
+            <td class="text-muted"><?= htmlspecialchars($p['category'] ?? '—') ?></td>
+            <td class="text-center"><?= (int)$p['stock'] ?></td>
+            <td class="text-end">&#8369;<?= number_format((float)$p['stock_value'], 2) ?></td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <?php endif; ?>
+
+</div><!-- /phase-7b container -->
+
+<div class="container-fluid px-4">
+
+  <!-- System Health -->
+  <div class="section-title"><i class="bi bi-heart-pulse"></i> System Health</div>
+  <div class="card shadow-sm mb-4">
+    <div class="card-body py-3">
+      <?php
+        $backupDir  = APP_ROOT . '/storage/backups';
+        $logsDir    = APP_ROOT . '/storage/logs';
+        $dbOk       = false;
+        try { $hc = getConnection(); $hc->query('SELECT 1'); $hc->close(); $dbOk = true; } catch(Exception $e) {}
+        $checks = [
+          ['PHP Version',          PHP_VERSION,                                                    true],
+          ['MySQL Connection',     $dbOk ? 'OK' : 'Failed',                                       $dbOk],
+          ['Backup Dir Writable',  is_writable($backupDir) ? 'Writable' : 'Not writable / missing', is_writable($backupDir)],
+          ['Logs Dir Writable',    is_writable($logsDir)   ? 'Writable' : 'Not writable / missing', is_writable($logsDir)],
+          ['Server Time',          date('Y-m-d H:i:s'),                                           true],
+        ];
+      ?>
+      <div class="row g-2">
+        <?php foreach ($checks as [$label, $value, $ok]): ?>
+        <div class="col-sm-6 col-md-4">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi <?= $ok ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger' ?>"></i>
+            <span class="text-muted small"><?= htmlspecialchars($label) ?>:</span>
+            <span class="small fw-semibold"><?= htmlspecialchars($value) ?></span>
+          </div>
+        </div>
+        <?php endforeach; ?>
+      </div>
+    </div>
+  </div>
+
+  <div class="text-muted small text-end mb-4">
+    Generated: <?= date('Y-m-d H:i:s') ?> &nbsp;|&nbsp;
+    <a href="dashboard.php">Refresh</a>
+  </div>
+
+</div>
+
+
+<script>
+(function() {
+  const PESO = v => '₱' + v.toLocaleString(undefined, { minimumFractionDigits: 2 });
+
+  function lazyInit(id, factory) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if ('IntersectionObserver' in window) {
+      const obs = new IntersectionObserver((entries, obs) => {
+        entries.forEach(e => { if (e.isIntersecting) { obs.unobserve(e.target); factory(e.target); } });
+      }, { threshold: 0.15 });
+      obs.observe(el);
+    } else { factory(el); }
+  }
+
+  const baseOpts = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } };
+  const tooltipDefaults = {
+    backgroundColor: 'rgba(255,255,255,0.95)', borderColor: '#dee2e6', borderWidth: 1,
+    titleColor: '#212529', bodyColor: '#495057', padding: 10
+  };
+
+  // Profit Trend 30 Days
+  const profitLabels = <?= json_encode(array_column($profitTrend30, 'label')) ?>;
+  const profitData   = <?= json_encode(array_column($profitTrend30, 'profit')) ?>;
+  lazyInit('chartProfitTrend', el => {
+    const ctx  = el.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, el.offsetHeight || 300);
+    grad.addColorStop(0, 'rgba(25,135,84,0.18)');
+    grad.addColorStop(1, 'rgba(25,135,84,0)');
+    new Chart(el, {
+      type: 'line',
+      data: { labels: profitLabels, datasets: [{
+        label: 'Profit', data: profitData,
+        borderColor: '#198754', backgroundColor: grad, fill: true,
+        tension: 0.4, pointRadius: 2, pointHoverRadius: 5, borderWidth: 2
+      }]},
+      options: { ...baseOpts,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
+          y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' },
+               ticks: { callback: v => '₱' + v.toLocaleString() } }
+        },
+        plugins: { legend: { display: false },
+          tooltip: { ...tooltipDefaults, callbacks: { label: ctx => ' ' + PESO(ctx.parsed.y) } } }
+      }
+    });
+  });
+
+  // Fast Moving Products
+  const fmLabels = <?= json_encode(array_map(fn($p) => mb_strlen($p['name']) > 18 ? mb_substr($p['name'],0,18).'...' : $p['name'], $fastMoving)) ?>;
+  const fmData   = <?= json_encode(array_map(fn($p) => (int)$p['total_qty'], $fastMoving)) ?>;
+  lazyInit('chartFastMoving', el => {
+    new Chart(el, {
+      type: 'bar',
+      data: { labels: fmLabels, datasets: [{
+        label: 'Qty Sold', data: fmData,
+        backgroundColor: '#0d6efd', borderRadius: 4, borderSkipped: false
+      }]},
+      options: { ...baseOpts, indexAxis: 'y',
+        scales: { x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' } }, y: { grid: { display: false } } },
+        plugins: { legend: { display: false },
+          tooltip: { ...tooltipDefaults, callbacks: { label: ctx => ' ' + ctx.parsed.x + ' units' } } }
+      }
+    });
+  });
+
+  // Delivery Status Doughnut
+  const dsLabels = <?= json_encode(array_map(fn($r) => ucwords(str_replace('_',' ',$r['delivery_status'])), $deliveryStatusDist)) ?>;
+  const dsData   = <?= json_encode(array_map(fn($r) => (int)$r['cnt'], $deliveryStatusDist)) ?>;
+  const dsColors = { pending:'#ffc107', preparing:'#0dcaf0', ready:'#0d6efd', out_for_delivery:'#212529', delivered:'#198754', cancelled:'#dc3545' };
+  const dsBg     = <?= json_encode(array_map(fn($r) => match($r['delivery_status']) {
+    'pending'=>'#ffc107','preparing'=>'#0dcaf0','ready'=>'#0d6efd',
+    'out_for_delivery'=>'#212529','delivered'=>'#198754','cancelled'=>'#dc3545', default=>'#6c757d'
+  }, $deliveryStatusDist)) ?>;
+  lazyInit('chartDeliveryStatus', el => {
+    new Chart(el, {
+      type: 'doughnut',
+      data: { labels: dsLabels.length ? dsLabels : ['No Data'],
+              datasets: [{ data: dsData.length ? dsData : [1],
+                backgroundColor: dsBg.length ? dsBg : ['#dee2e6'], borderWidth: 0, hoverOffset: 6 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '65%',
+        plugins: { legend: { display: true, position: 'bottom',
+          labels: { boxWidth: 11, padding: 12, usePointStyle: true } },
+          tooltip: { ...tooltipDefaults } }
+      }
+    });
+  });
+
+  // Municipality Delivery Bar
+  const muniLabels = <?= json_encode(array_column($muniBreakdown, 'municipality')) ?>;
+  const muniData   = <?= json_encode(array_column($muniBreakdown, 'total')) ?>;
+  lazyInit('chartMuniDelivery', el => {
+    new Chart(el, {
+      type: 'bar',
+      data: { labels: muniLabels, datasets: [{
+        label: 'Deliveries', data: muniData,
+        backgroundColor: 'rgba(111,66,193,0.75)', hoverBackgroundColor: '#6f42c1',
+        borderRadius: 4, borderSkipped: false
+      }]},
+      options: { ...baseOpts,
+        scales: { x: { grid: { display: false } },
+          y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { precision: 0 } } },
+        plugins: { legend: { display: false },
+          tooltip: { ...tooltipDefaults, callbacks: { label: ctx => ' ' + ctx.parsed.y + ' orders' } } }
+      }
+    });
+  });
+})();
 </script>
 <?php layoutEnd(); ?>
