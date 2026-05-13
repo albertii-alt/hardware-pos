@@ -586,12 +586,12 @@ $retailVal        = (float)$inventoryValuation['retail_value'];
     <div class="col-md-6">
       <div class="card shadow-sm h-100" style="border-left:3px solid #0dcaf0">
         <div class="card-body py-3">
-          <div class="text-muted small mb-1"><i class="bi bi-droplet me-1"></i>Lowest Measured Stock</div>
+          <div class="text-muted small mb-1"><i class="bi bi-droplet me-1"></i>Lowest Stock Product</div>
           <?php if ($lowestMeasured): ?>
           <div class="fw-semibold"><?= htmlspecialchars($lowestMeasured['name']) ?></div>
           <div class="text-info fw-bold"><?= number_format((float)$lowestMeasured['stock'], 3) ?> <?= htmlspecialchars($lowestMeasured['inventory_unit']) ?> remaining</div>
           <?php else: ?>
-          <div class="text-muted small">No measured products in stock.</div>
+          <div class="text-muted small">No products in stock.</div>
           <?php endif; ?>
         </div>
       </div>
@@ -599,12 +599,12 @@ $retailVal        = (float)$inventoryValuation['retail_value'];
     <div class="col-md-6">
       <div class="card shadow-sm h-100" style="border-left:3px solid #6f42c1">
         <div class="card-body py-3">
-          <div class="text-muted small mb-1"><i class="bi bi-bar-chart me-1"></i>Most Sold Measured (Month)</div>
+          <div class="text-muted small mb-1"><i class="bi bi-bar-chart me-1"></i>Most Sold Product (Month)</div>
           <?php if ($mostSoldMeasured): ?>
           <div class="fw-semibold"><?= htmlspecialchars($mostSoldMeasured['name']) ?></div>
           <div class="fw-bold" style="color:#6f42c1"><?= number_format((float)$mostSoldMeasured['total_qty'], 3) ?> <?= htmlspecialchars($mostSoldMeasured['inventory_unit']) ?> sold</div>
           <?php else: ?>
-          <div class="text-muted small">No measured product sales this month.</div>
+          <div class="text-muted small">No product sales this month.</div>
           <?php endif; ?>
         </div>
       </div>

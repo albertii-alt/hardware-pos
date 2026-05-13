@@ -99,6 +99,8 @@ function methodLabel(string $m): string {
     flex: 1; padding: 10px 0; font-size: 13px;
     border: none; border-radius: 4px; cursor: pointer;
     font-family: inherit; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    text-decoration: none;
   }
   .btn-print { background: #212529; color: #fff; }
   .btn-print:hover { background: #444; }

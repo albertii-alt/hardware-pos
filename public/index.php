@@ -19,6 +19,11 @@ layoutStart('Lumina POS');
 <style>
   #product-grid .card { cursor:pointer; transition:box-shadow .15s; }
   #product-grid .card:hover { box-shadow:0 4px 14px rgba(0,0,0,.13); }
+  #search-active #category-pills,
+  #search-active #product-grid,
+  #search-active #no-results {
+    display: none !important;
+  }
   .badge-stock { font-size:.72rem; }
   .pos-cat-label {
     font-size: .72rem;
@@ -39,20 +44,18 @@ layoutStart('Lumina POS');
   .total-label { font-size: 1.1rem; font-weight: 600; }
   
   /* IMPROVEMENT: Autocomplete dropdown */
+  #search-wrapper {
+    position: relative;
+  }
   .autocomplete-items {
-    position: absolute;
+    position: fixed;
     border: 1px solid #ddd;
-    border-bottom: none;
-    border-top: none;
-    z-index: 99;
-    top: 100%;
-    left: 0;
-    right: 0;
+    z-index: 9999;
     max-height: 320px;
     overflow-y: auto;
     background: #fff;
     border-radius: 0 0 4px 4px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    box-shadow: 0 4px 16px rgba(0,0,0,.18);
   }
   .autocomplete-item {
     padding: 8px 12px;
@@ -118,14 +121,16 @@ layoutStart('Lumina POS');
 <div class="row g-3">
 
   <!-- LEFT: Products -->
-  <div class="col-lg-7 col-md-12">
+  <div class="col-lg-7 col-md-12" id="left-col">
     <!-- Search with autocomplete wrapper -->
-    <div class="input-group mb-3" style="position: relative;">
-      <span class="input-group-text"><i class="bi bi-search"></i></span>
-      <input type="text" id="search-input" class="form-control" placeholder="Search by name, SKU, or category… (Press Enter for SKU quick-add)" autocomplete="off">
-      <button class="btn btn-outline-secondary" id="btn-clear-search" title="Clear"><i class="bi bi-x-lg"></i></button>
-      <div id="autocomplete-list" class="autocomplete-items" style="display: none;"></div>
+    <div id="search-wrapper" class="mb-3">
+      <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" id="search-input" class="form-control" placeholder="Search by name, SKU, or category… (Press Enter for SKU quick-add)" autocomplete="off">
+        <button class="btn btn-outline-secondary" id="btn-clear-search" title="Clear"><i class="bi bi-x-lg"></i></button>
+      </div>
     </div>
+    <div id="autocomplete-list" class="autocomplete-items" style="display: none;"></div>
 
     <!-- Category pills -->
     <div id="category-pills" class="mb-3 d-flex flex-wrap gap-2"></div>
@@ -467,33 +472,33 @@ function renderProducts() {
 // ─── Autocomplete Feature ────────────────────────────────────────────────────
 function showAutocomplete(filterText) {
   if (!filterText || filterText.length < 1) {
-    document.getElementById('autocomplete-list').style.display = 'none';
+    closeAutocomplete();
     return;
   }
-  
-  const matches = ALL_PRODUCTS.filter(p => 
+
+  const matches = ALL_PRODUCTS.filter(p =>
     (p.name || '').toLowerCase().includes(filterText) ||
     (p.sku || '').toLowerCase().includes(filterText) ||
     (p.category || '').toLowerCase().includes(filterText)
   ).slice(0, 8);
-  
+
   if (matches.length === 0) {
-    document.getElementById('autocomplete-list').style.display = 'none';
+    closeAutocomplete();
     return;
   }
-  
+
   const listDiv = document.getElementById('autocomplete-list');
   listDiv.innerHTML = '';
   currentFocus = -1;
-  
-  matches.forEach((p, idx) => {
+
+  matches.forEach((p) => {
     const item = document.createElement('div');
     item.className = 'autocomplete-item';
     if (parseInt(p.stock) <= 0) item.classList.add('disabled');
-    
+
     const nameHighlighted = (p.name || '').replace(new RegExp(`(${filterText})`, 'gi'), '<span class="highlight">$1</span>');
-    const skuHighlighted = (p.sku || '').replace(new RegExp(`(${filterText})`, 'gi'), '<span class="highlight">$1</span>');
-    
+    const skuHighlighted  = (p.sku  || '').replace(new RegExp(`(${filterText})`, 'gi'), '<span class="highlight">$1</span>');
+
     item.innerHTML = `
       <div class="item-name">
         ${nameHighlighted}
@@ -502,23 +507,29 @@ function showAutocomplete(filterText) {
       </div>
       <div class="item-price">₱${parseFloat(p.selling_price).toFixed(2)} <span style="font-size:.7rem;color:#6c757d">/ ${escHtml(p.inventory_unit || 'pcs')}</span></div>
     `;
-    
+
     item.onclick = () => {
       if (parseInt(p.stock) > 0) {
         DOM.searchInput.value = '';
-        listDiv.style.display = 'none';
+        closeAutocomplete();
         handleAddToCart(p.id);
       }
     };
-    
+
     listDiv.appendChild(item);
   });
-  
+
+  const rect = DOM.searchInput.getBoundingClientRect();
+  listDiv.style.top   = rect.bottom + 'px';
+  listDiv.style.left  = rect.left + 'px';
+  listDiv.style.width = rect.width + 'px';
   listDiv.style.display = 'block';
+  document.getElementById('left-col').classList.add('search-active');
 }
 
 function closeAutocomplete() {
   document.getElementById('autocomplete-list').style.display = 'none';
+  document.getElementById('left-col').classList.remove('search-active');
   currentFocus = -1;
 }
 
@@ -1079,6 +1090,27 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// Reposition dropdown on scroll/resize
+window.addEventListener('scroll', () => {
+  const listDiv = document.getElementById('autocomplete-list');
+  if (listDiv.style.display === 'block') {
+    const rect = DOM.searchInput.getBoundingClientRect();
+    listDiv.style.top  = rect.bottom + 'px';
+    listDiv.style.left = rect.left + 'px';
+    listDiv.style.width = rect.width + 'px';
+  }
+}, true);
+
+window.addEventListener('resize', () => {
+  const listDiv = document.getElementById('autocomplete-list');
+  if (listDiv.style.display === 'block') {
+    const rect = DOM.searchInput.getBoundingClientRect();
+    listDiv.style.top  = rect.bottom + 'px';
+    listDiv.style.left = rect.left + 'px';
+    listDiv.style.width = rect.width + 'px';
+  }
+});
+
 DOM.clearSearch.addEventListener('click', () => {
   DOM.searchInput.value = '';
   closeAutocomplete();
@@ -1158,6 +1190,8 @@ async function tsSetBarangay(municipalityId, barangayId) {
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
+// Move autocomplete list to body to escape stacking contexts
+document.body.appendChild(document.getElementById('autocomplete-list'));
 renderProducts();
 renderCart();
 

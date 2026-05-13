@@ -74,7 +74,7 @@ layoutStart('Lumina POS – Deliveries');
   .tbl th { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; white-space:nowrap; }
   .tbl td { vertical-align:middle; font-size:.875rem; }
   .tbl tbody tr:hover { background:#f8f9ff; }
-  .btn-act { height:30px; padding:0 .5rem; font-size:.78rem; white-space:nowrap; }
+  .btn-act { height:30px; padding:0 .5rem; font-size:.78rem; white-space:nowrap; display:inline-flex; align-items:center; justify-content:center; }
   .summary-card { border-left:4px solid; border-radius:.375rem; }
   .summary-card.s-pending   { border-color:#ffc107; }
   .summary-card.s-preparing { border-color:#0dcaf0; }

@@ -168,16 +168,18 @@ switch ($action) {
 
         $allows  = (bool)$res['allows_decimal'];
         $minSell = (float)$res['min_sell_quantity'];
-        $qty     = normalizeQuantity($raw);
-        if ($qty === null) { $conn->close(); jsonOut(['success'=>false,'error'=>'Invalid quantity.']); }
+        
+        // Normalize the absolute value, then restore sign
+        $isNegative = (float)$raw < 0;
+        $absQty = normalizeQuantity(abs((float)$raw));
+        if ($absQty === null) { $conn->close(); jsonOut(['success'=>false,'error'=>'Invalid quantity.']); }
 
-        // For removals, validate the absolute value
-        $absQty = abs($qty);
+        // Validate the absolute value
         $err = validateQuantityPrecision($absQty, $allows, $minSell);
         if ($err) { $conn->close(); jsonOut(['success'=>false,'error'=>$err]); }
 
-        // Determine direction from original input sign
-        $qty = (float)$raw < 0 ? -$absQty : $absQty;
+        // Apply the sign
+        $qty = $isNegative ? -$absQty : $absQty;
 
         $stockBefore = (float)$res['stock'];
         $newStock    = round($stockBefore + $qty, 3);

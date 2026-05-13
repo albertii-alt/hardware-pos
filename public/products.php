@@ -313,18 +313,6 @@ layoutStart('Lumina POS – Products');
             <div class="text-muted" style="font-size:.7rem">Auto-filled qty when adding to cart</div>
           </div>
         </div>
-        <div class="row g-2 mt-1">
-          <div class="col-sm-6">
-            <label class="form-label form-label-sm mb-1">Quantity Step</label>
-            <input type="number" id="pf-qty-step" class="form-control form-control-sm" min="0.001" step="0.001" placeholder="1.000">
-            <div class="text-muted" style="font-size:.7rem">Selling increment (e.g. 0.250 for sand)</div>
-          </div>
-          <div class="col-sm-6">
-            <label class="form-label form-label-sm mb-1">Default Sell Qty</label>
-            <input type="number" id="pf-default-sell" class="form-control form-control-sm" min="0.001" step="0.001" placeholder="1.000">
-            <div class="text-muted" style="font-size:.7rem">Auto-filled qty when adding to cart</div>
-          </div>
-        </div>
 
         <div class="field-group-label">Pricing</div>
         <div class="row g-2">

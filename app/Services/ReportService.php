@@ -130,7 +130,7 @@ class ReportService
         $stmt = $this->conn->prepare(
             'SELECT sku, name, category, stock, min_stock_alert, inventory_unit, allows_decimal, quantity_step
              FROM products
-             WHERE stock <= min_stock_alert AND deleted = 0
+             WHERE min_stock_alert > 0 AND stock <= min_stock_alert AND deleted = 0
              ORDER BY stock ASC'
         );
         $stmt->execute();
@@ -221,10 +221,10 @@ class ReportService
     public function getDashboardInsights(): array
     {
         // Weekly growth %
-        $thisWeekStart = date('Y-m-d', strtotime('monday this week'));
-        $thisWeekEnd   = date('Y-m-d', strtotime('sunday this week'));
-        $lastWeekStart = date('Y-m-d', strtotime('monday last week'));
-        $lastWeekEnd   = date('Y-m-d', strtotime('sunday last week'));
+        $thisWeekStart = date('Y-m-d', strtotime('last monday', strtotime('tomorrow')));
+        $thisWeekEnd   = date('Y-m-d', strtotime('next sunday', strtotime($thisWeekStart . ' -1 day')));
+        $lastWeekStart = date('Y-m-d', strtotime($thisWeekStart . ' -7 days'));
+        $lastWeekEnd   = date('Y-m-d', strtotime($thisWeekEnd   . ' -7 days'));
 
         $thisWeek = $this->getRangeSummary($thisWeekStart, $thisWeekEnd);
         $lastWeek = $this->getRangeSummary($lastWeekStart, $lastWeekEnd);
@@ -264,7 +264,7 @@ class ReportService
         $stmt = $this->conn->prepare(
             'SELECT name, stock, inventory_unit
              FROM products
-             WHERE allows_decimal = 1 AND deleted = 0 AND deleted_at IS NULL AND stock > 0
+             WHERE deleted = 0 AND deleted_at IS NULL AND stock > 0
              ORDER BY stock ASC
              LIMIT 1'
         );
@@ -285,7 +285,6 @@ class ReportService
              JOIN products p ON p.id = oi.product_id
              WHERE o.order_date BETWEEN ? AND ?
                AND o.status = "completed"
-               AND p.allows_decimal = 1
              GROUP BY p.id, p.name, p.inventory_unit
              ORDER BY total_qty DESC
              LIMIT 1'
@@ -301,31 +300,43 @@ class ReportService
 
     public function getProfitTrendLast30Days(): array
     {
+        // Revenue: grouped per order to avoid double-counting with items JOIN
         $stmt = $this->conn->prepare(
             'SELECT DATE(o.order_date) AS day,
-                    COALESCE(SUM(o.total_amount), 0)                        AS revenue,
+                    COALESCE(SUM(o.total_amount), 0) AS revenue
+             FROM orders o
+             WHERE o.order_date >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+               AND o.status = "completed"
+             GROUP BY DATE(o.order_date)'
+        );
+        $stmt->execute();
+        $revRows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+
+        // Cost: via order_items JOIN
+        $stmt = $this->conn->prepare(
+            'SELECT DATE(o.order_date) AS day,
                     COALESCE(SUM(oi.quantity * COALESCE(p.cost_price, 0)), 0) AS cost
              FROM orders o
              JOIN order_items oi ON oi.order_id = o.id
              JOIN products    p  ON p.id = oi.product_id
              WHERE o.order_date >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
                AND o.status = "completed"
-             GROUP BY DATE(o.order_date)
-             ORDER BY day ASC'
+             GROUP BY DATE(o.order_date)'
         );
         $stmt->execute();
-        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $costRows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
 
-        // Fill missing days with zero
-        $map = [];
-        foreach ($rows as $r) $map[$r['day']] = $r;
+        $revMap  = array_column($revRows,  'revenue', 'day');
+        $costMap = array_column($costRows, 'cost',    'day');
+
         $result = [];
         for ($i = 29; $i >= 0; $i--) {
             $d = date('Y-m-d', strtotime("-$i days"));
             $result[] = [
                 'label'  => date('M d', strtotime($d)),
-                'profit' => isset($map[$d]) ? (float)$map[$d]['revenue'] - (float)$map[$d]['cost'] : 0.0,
+                'profit' => (float)($revMap[$d] ?? 0) - (float)($costMap[$d] ?? 0),
             ];
         }
         return $result;
@@ -384,26 +395,35 @@ class ReportService
         $monthStart = date('Y-m-01') . ' 00:00:00';
         $monthEnd   = date('Y-m-t')  . ' 23:59:59';
 
+        // Revenue: sum per order only (no items JOIN) to avoid double-counting
         $stmt = $this->conn->prepare(
-            'SELECT
-                COALESCE(SUM(o.total_amount), 0)                          AS gross_revenue,
-                COALESCE(SUM(oi.quantity * COALESCE(p.cost_price, 0)), 0) AS total_cost
-             FROM orders o
-             JOIN order_items oi ON oi.order_id = o.id
-             JOIN products    p  ON p.id = oi.product_id
+            'SELECT COALESCE(SUM(total_amount), 0) AS gross_revenue
+             FROM orders
+             WHERE order_date BETWEEN ? AND ? AND status = "completed"'
+        );
+        $stmt->bind_param('ss', $monthStart, $monthEnd);
+        $stmt->execute();
+        $revRow = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        // Cost: sum via order_items JOIN
+        $stmt = $this->conn->prepare(
+            'SELECT COALESCE(SUM(oi.quantity * COALESCE(p.cost_price, 0)), 0) AS total_cost
+             FROM order_items oi
+             JOIN orders  o ON o.id = oi.order_id
+             JOIN products p ON p.id = oi.product_id
              WHERE o.order_date BETWEEN ? AND ? AND o.status = "completed"'
         );
         $stmt->bind_param('ss', $monthStart, $monthEnd);
         $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
+        $costRow = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
-        $revenue = (float)$row['gross_revenue'];
-        $cost    = (float)$row['total_cost'];
+        $revenue = (float)$revRow['gross_revenue'];
+        $cost    = (float)$costRow['total_cost'];
         $profit  = $revenue - $cost;
         $margin  = $revenue > 0 ? round(($profit / $revenue) * 100, 1) : 0.0;
 
-        // Highest / lowest single-day profit this month
         $stmt2 = $this->conn->prepare(
             'SELECT DATE(o.order_date) AS day,
                     SUM(o.total_amount) - SUM(oi.quantity * COALESCE(p.cost_price,0)) AS day_profit
@@ -524,12 +544,12 @@ class ReportService
         $stmt = $this->conn->prepare(
             'SELECT
                 COUNT(*) AS total_deliveries,
-                SUM(delivery_status = "delivered")   AS delivered,
-                SUM(delivery_status = "cancelled")   AS cancelled,
-                SUM(delivery_status = "pending")     AS pending,
+                SUM(delivery_status = "delivered")        AS delivered,
+                SUM(delivery_status = "cancelled")        AS cancelled,
+                SUM(delivery_status = "pending")          AS pending,
                 SUM(delivery_status = "out_for_delivery") AS out_for_delivery
              FROM orders
-             WHERE delivery_type = "delivery" AND status = "completed"'
+             WHERE delivery_type = "delivery"'
         );
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
