@@ -505,9 +505,9 @@ function showAutocomplete(filterText) {
     
     item.onclick = () => {
       if (parseInt(p.stock) > 0) {
-        addToCart(p.id);
         DOM.searchInput.value = '';
         listDiv.style.display = 'none';
+        handleAddToCart(p.id);
       }
     };
     
@@ -558,9 +558,9 @@ function selectCurrentAutocomplete() {
 function quickSkuAdd(sku) {
   const product = ALL_PRODUCTS.find(p => p.sku && p.sku.toLowerCase() === sku.toLowerCase());
   if (product) {
-    addToCart(product.id);
     DOM.searchInput.value = '';
     closeAutocomplete();
+    handleAddToCart(product.id);
     return true;
   }
   return false;

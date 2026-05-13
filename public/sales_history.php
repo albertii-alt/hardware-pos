@@ -282,7 +282,7 @@ function buildOrderHtml(o) {
   const items = (o.items || []).map(i => `
     <tr>
       <td>${escHtml(i.name)}<br><small class="text-muted">${escHtml(i.sku||'')}</small></td>
-      <td class="text-center">${i.quantity}</td>
+      <td class="text-center">${parseFloat(i.quantity).toFixed(i.inventory_unit && ['kg','g','ton','meter','ft','inch','cubic','liter','roll'].includes(i.inventory_unit) ? 3 : 0)} <span class="text-muted" style="font-size:.75rem">${escHtml(i.inventory_unit||'pcs')}</span></td>
       <td class="text-end">₱${parseFloat(i.unit_price).toFixed(2)}</td>
       <td class="text-end">₱${parseFloat(i.total).toFixed(2)}</td>
     </tr>`).join('');
