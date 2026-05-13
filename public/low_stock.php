@@ -114,7 +114,14 @@ layoutStart('Lumina POS – Low Stock');
             <td class="fw-semibold"><?= htmlspecialchars($p['name']) ?></td>
             <td class="text-muted"><?= htmlspecialchars($p['category'] ?? '—') ?></td>
             <td class="text-center fw-bold <?= $isOut ? 'text-danger' : 'text-warning' ?>">
-              <?= (int)$p['stock'] ?>
+              <?= formatQuantity((float)$p['stock'], (bool)($p['allows_decimal'] ?? false)) ?>
+              <span class="text-muted fw-normal" style="font-size:.75rem"><?= htmlspecialchars($p['inventory_unit'] ?? 'pcs') ?></span>
+              <?php
+                $step = (float)($p['quantity_step'] ?? 1.0);
+                if (($p['allows_decimal'] ?? 0) && $step > 0 && (float)$p['stock'] < $step && (float)$p['stock'] > 0):
+              ?>
+              <div class="text-danger" style="font-size:.68rem">Below sellable increment</div>
+              <?php endif; ?>
             </td>
             <td class="text-center text-muted"><?= (int)$p['min_stock_alert'] ?></td>
             <td class="text-center">

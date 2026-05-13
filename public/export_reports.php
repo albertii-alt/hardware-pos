@@ -87,13 +87,14 @@ switch ($type) {
         $out = array_map(fn($r) => [
             $r['sku']  ?? '',
             $r['name'],
-            (int)$r['stock'],
+            $r['inventory_unit'] ?? 'pcs',
+            number_format((float)$r['stock'], 3, '.', ''),
             (int)$r['min_stock_alert'],
             (int)$r['stock'] === 0 ? 'Out of Stock' : 'Low Stock',
         ], $rows);
         $export->exportToCSV(
             $export->formatFilename('Low_Stock_Inventory'),
-            ['SKU', 'Product', 'Stock', 'Min Stock', 'Status'],
+            ['SKU', 'Product', 'Inventory Unit', 'Stock', 'Min Stock', 'Status'],
             $out
         );
     }
@@ -107,14 +108,15 @@ switch ($type) {
             $r['name'],
             $r['category']         ?? '',
             $r['unit']             ?? '',
+            $r['inventory_unit']   ?? 'pcs',
             number_format((float)$r['cost_price'],    2, '.', ''),
             number_format((float)$r['selling_price'], 2, '.', ''),
-            (int)$r['stock'],
+            number_format((float)$r['stock'],         3, '.', ''),
             (int)$r['min_stock_alert'],
         ], $rows);
         $export->exportToCSV(
             $export->formatFilename('Products_Inventory'),
-            ['SKU', 'Product', 'Category', 'Unit', 'Cost Price', 'Selling Price', 'Stock', 'Min Stock Alert'],
+            ['SKU', 'Product', 'Category', 'Unit', 'Inventory Unit', 'Cost Price', 'Selling Price', 'Stock', 'Min Stock Alert'],
             $out
         );
     }

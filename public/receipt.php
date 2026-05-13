@@ -162,7 +162,7 @@ function methodLabel(string $m): string {
           <div class="item-sku"><?= esc($item['sku']) ?></div>
           <?php endif; ?>
         </td>
-        <td class="r"><?= (int)$item['quantity'] ?></td>
+        <td class="r"><?= number_format((float)$item['quantity'], 3) ?> <?= htmlspecialchars($item['inventory_unit'] ?? $item['unit'] ?? 'pcs') ?></td>
         <td class="r"><?= peso((float)$item['unit_price']) ?></td>
         <td class="r"><?= peso((float)$item['total']) ?></td>
       </tr>

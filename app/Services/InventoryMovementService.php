@@ -17,24 +17,27 @@ class InventoryMovementService
         int     $productId,
         string  $productName,
         string  $actionType,
-        int     $quantityBefore,
-        int     $quantityChanged,
-        int     $quantityAfter,
-        ?int    $userId   = null,
-        ?string $username = null,
-        ?string $notes    = null
+        float   $quantityBefore,
+        float   $quantityChanged,
+        float   $quantityAfter,
+        ?int    $userId            = null,
+        ?string $username          = null,
+        ?string $notes             = null,
+        string  $unitSnapshot      = 'pcs',
+        string  $unitAfterSnapshot = ''
     ): void {
+        $unitAfterSnapshot = $unitAfterSnapshot !== '' ? $unitAfterSnapshot : $unitSnapshot;
         try {
             $stmt = $this->conn->prepare(
                 'INSERT INTO inventory_movements
-                    (product_id, product_name_snapshot, action_type,
+                    (product_id, product_name_snapshot, unit_snapshot, unit_after_snapshot, action_type,
                      quantity_before, quantity_changed, quantity_after,
                      user_id, username, notes)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
             $stmt->bind_param(
-                'issiiiiis',
-                $productId, $productName, $actionType,
+                'issssdddiss',
+                $productId, $productName, $unitSnapshot, $unitAfterSnapshot, $actionType,
                 $quantityBefore, $quantityChanged, $quantityAfter,
                 $userId, $username, $notes
             );
@@ -79,8 +82,10 @@ class InventoryMovementService
             $params[] = $like;
         }
 
-        $sql  = 'SELECT * FROM inventory_movements WHERE ' . implode(' AND ', $where)
-              . ' ORDER BY created_at DESC LIMIT ?';
+        $sql  = 'SELECT im.*, im.unit_snapshot AS inventory_unit, im.unit_after_snapshot
+                 FROM inventory_movements im
+                 WHERE ' . implode(' AND ', $where)
+              . ' ORDER BY im.created_at DESC LIMIT ?';
         $types   .= 'i';
         $params[] = $limit;
 

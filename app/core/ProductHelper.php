@@ -7,7 +7,7 @@ function addProduct(array $data): array {
     if (($data['selling_price'] ?? 0) <= 0) {
         return ['success' => false, 'error' => 'Selling price must be greater than 0.'];
     }
-    if (($data['stock'] ?? -1) < 0) {
+    if ((float)($data['stock'] ?? -1) < 0) {
         return ['success' => false, 'error' => 'Stock cannot be negative.'];
     }
 
@@ -27,18 +27,23 @@ function addProduct(array $data): array {
     }
 
     $name            = trim($data['name']);
-    $category        = $data['category']       ?? '';
-    $unit            = $data['unit']            ?? '';
-    $cost_price      = $data['cost_price']      ?? 0;
-    $selling_price   = $data['selling_price'];
-    $stock           = $data['stock'];
-    $min_stock_alert = $data['min_stock_alert'] ?? 0;
+    $category        = $data['category']        ?? '';
+    $unit            = $data['unit']             ?? '';
+    $inventory_unit       = $data['inventory_unit']        ?? 'pcs';
+    $allows_decimal       = isset($data['allows_decimal'])         ? (int)$data['allows_decimal']         : 0;
+    $min_sell_qty         = isset($data['min_sell_quantity'])       ? (float)$data['min_sell_quantity']     : 1.0;
+    $quantity_step        = isset($data['quantity_step'])           ? (float)$data['quantity_step']         : 1.0;
+    $default_sell_qty     = isset($data['default_sell_quantity'])   ? (float)$data['default_sell_quantity'] : 1.0;
+    $cost_price           = $data['cost_price']       ?? 0;
+    $selling_price        = $data['selling_price'];
+    $stock                = $data['stock'];
+    $min_stock_alert      = $data['min_stock_alert']  ?? 0;
 
     $stmt = $conn->prepare(
-        'INSERT INTO products (sku, name, category, unit, cost_price, selling_price, stock, min_stock_alert)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO products (sku, name, category, unit, inventory_unit, allows_decimal, min_sell_quantity, quantity_step, default_sell_quantity, cost_price, selling_price, stock, min_stock_alert)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    $stmt->bind_param('ssssddii', $sku, $name, $category, $unit, $cost_price, $selling_price, $stock, $min_stock_alert);
+    $stmt->bind_param('sssssidddddii', $sku, $name, $category, $unit, $inventory_unit, $allows_decimal, $min_sell_qty, $quantity_step, $default_sell_qty, $cost_price, $selling_price, $stock, $min_stock_alert);
 
     if (!$stmt->execute()) {
         $error = $stmt->error; $stmt->close(); $conn->close();
@@ -97,12 +102,12 @@ function importProductsFromCSV(string $filePath): array {
     $conn->begin_transaction();
 
     $insertStmt = $conn->prepare(
-        'INSERT INTO products (sku, name, category, unit, cost_price, selling_price, stock, min_stock_alert)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO products (sku, name, category, unit, inventory_unit, allows_decimal, min_sell_quantity, quantity_step, default_sell_quantity, cost_price, selling_price, stock, min_stock_alert)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $updateStmt = $conn->prepare(
         'UPDATE products
-         SET name=?, category=?, unit=?, cost_price=?, selling_price=?, stock=?, min_stock_alert=?
+         SET name=?, category=?, unit=?, inventory_unit=?, allows_decimal=?, min_sell_quantity=?, quantity_step=?, default_sell_quantity=?, cost_price=?, selling_price=?, stock=?, min_stock_alert=?
          WHERE sku=?'
     );
     $checkStmt = $conn->prepare('SELECT id FROM products WHERE sku = ? LIMIT 1');
@@ -134,9 +139,20 @@ function importProductsFromCSV(string $filePath): array {
         $name          = $row['name'];
         $category      = $row['category'];
         $unit          = $row['unit'];
+        $inv_unit      = $row['inventory_unit'] ?? $unit ?: 'pcs';
+        $measured      = in_array($inv_unit, ['kg','g','ton','meter','ft','inch','cubic','liter','roll'], true);
+        $allows_dec    = $measured ? 1 : 0;
+        $min_sell      = $measured ? 0.001 : 1.0;
+        $qty_step      = $measured ? (match($inv_unit) {
+            'kg','g','ton' => 0.100, 'meter','ft','inch','roll' => 0.500,
+            'cubic','liter' => 0.250, default => 0.100
+        }) : 1.0;
+        $def_sell      = $measured ? (match($inv_unit) {
+            'cubic','liter' => 0.500, default => 1.0
+        }) : 1.0;
         $cost_price    = (float)$row['cost_price'];
         $selling_price = (float)$row['selling_price'];
-        $stock         = (int)$row['stock'];
+        $stock         = (float)$row['stock'];
         $min_stock     = (int)$row['min_stock_alert'];
 
         $checkStmt->bind_param('s', $sku);
@@ -146,14 +162,14 @@ function importProductsFromCSV(string $filePath): array {
         $checkStmt->free_result();
 
         if ($exists) {
-            $updateStmt->bind_param('sssddiss', $name, $category, $unit, $cost_price, $selling_price, $stock, $min_stock, $sku);
+            $updateStmt->bind_param('sssidddddiis', $name, $category, $unit, $inv_unit, $allows_dec, $min_sell, $qty_step, $def_sell, $cost_price, $selling_price, $stock, $min_stock, $sku);
             if (!$updateStmt->execute()) {
                 $error = $updateStmt->error; $conn->rollback(); fclose($handle);
                 return ['success' => false, 'error' => $error, 'row' => $rowNum];
             }
             $updated++;
         } else {
-            $insertStmt->bind_param('ssssddii', $sku, $name, $category, $unit, $cost_price, $selling_price, $stock, $min_stock);
+            $insertStmt->bind_param('sssssidddddii', $sku, $name, $category, $unit, $inv_unit, $allows_dec, $min_sell, $qty_step, $def_sell, $cost_price, $selling_price, $stock, $min_stock);
             if (!$insertStmt->execute()) {
                 $error = $insertStmt->error; $conn->rollback(); fclose($handle);
                 return ['success' => false, 'error' => $error, 'row' => $rowNum];

@@ -46,7 +46,7 @@ class OrderService
         }
 
         foreach ($cart as $item) {
-            $qty = (int)($item['quantity'] ?? 0);
+            $qty = (float)($item['quantity'] ?? 0);
             if ($qty <= 0) {
                 return ['success' => false, 'error' => 'Item quantity must be greater than zero.'];
             }
@@ -85,9 +85,9 @@ class OrderService
             return ['success' => false, 'error' => 'Invalid payment method.'];
         }
 
-        $subtotal = array_reduce($cart, fn($carry, $item) =>
-            $carry + (float)$item['price'] * (int)$item['quantity'], 0.0
-        );
+        $subtotal = round(array_reduce($cart, fn($carry, $item) =>
+            $carry + (float)$item['price'] * round((float)$item['quantity'], 3), 0.0
+        ), 2);
         $total = $subtotal + $deliveryFee;
 
         $amountTendered  = null;
@@ -116,12 +116,21 @@ class OrderService
         $this->conn->begin_transaction();
 
         try {
-            // Validate each product exists and is not soft-deleted
+            // Validate each product exists, is not soft-deleted, and quantity is valid
             foreach ($cart as $item) {
                 $productId = (int)($item['id'] ?? $item['product_id'] ?? 0);
-                if (!$this->products->existsActive($productId)) {
+                $product   = $this->products->findActiveById($productId);
+                if (!$product) {
                     $name = htmlspecialchars($item['name'] ?? ('ID ' . $productId));
                     throw new RuntimeException("Product no longer available: {$name}");
+                }
+                $qty    = round((float)($item['quantity'] ?? 0), 3);
+                $allows = (bool)$product['allows_decimal'];
+                $minQty = (float)$product['min_sell_quantity'];
+                $step   = (float)($product['quantity_step'] ?? 1.0);
+                $err    = validateQuantityPrecision($qty, $allows, $minQty, $step);
+                if ($err !== null) {
+                    throw new RuntimeException(htmlspecialchars($product['name']) . ': ' . $err);
                 }
             }
 
@@ -140,9 +149,9 @@ class OrderService
             // Insert items + deduct stock atomically
             foreach ($cart as $item) {
                 $productId = (int)($item['id'] ?? $item['product_id'] ?? 0);
-                $quantity  = (int)$item['quantity'];
+                $quantity  = round((float)$item['quantity'], 3);
                 $unitPrice = (float)$item['price'];
-                $lineTotal = $unitPrice * $quantity;
+                $lineTotal = round($unitPrice * $quantity, 2);
 
                 $this->orders->insertOrderItem($orderId, $productId, $quantity, $unitPrice, $lineTotal);
 
@@ -238,14 +247,15 @@ class OrderService
 
             foreach ($order['items'] as $item) {
                 $productId   = (int)$item['product_id'];
-                $qty         = (int)$item['quantity'];
+                $qty         = round((float)$item['quantity'], 3);
                 $stockAfter  = $this->products->restoreStock($productId, $qty);
-                $stockBefore = $stockAfter - $qty;
+                $stockBefore = round($stockAfter - $qty, 3);
                 $movSvc->logMovement(
                     $productId, $item['name'], 'STOCK_RESTORE',
                     $stockBefore, $qty, $stockAfter,
                     $userId, $username,
-                    'Order cancellation #' . $orderId
+                    'Order cancellation #' . $orderId,
+                    $item['inventory_unit'] ?? 'pcs'
                 );
             }
 

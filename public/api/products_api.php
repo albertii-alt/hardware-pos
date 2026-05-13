@@ -16,9 +16,28 @@ $sessionUsername = $_SESSION['username'] ?? null;
 
 function jsonOut(array $data): void { echo json_encode($data); exit; }
 
+$ALLOWED_UNITS = ['pcs','box','pack','bundle','set','roll','kg','g','ton','meter','ft','inch','cubic','liter','bag','sheet','tube','stick','bar'];
+
+function validateUnit(string $unit, array $allowed): bool {
+    return in_array($unit, $allowed, true);
+}
+
 switch ($action) {
 
     case 'add':
+        $invUnit    = trim($input['inventory_unit'] ?? 'pcs');
+        $allowsDec  = isset($input['allows_decimal']) ? (int)$input['allows_decimal'] : 0;
+        $minSellQty = isset($input['min_sell_quantity'])     ? (float)$input['min_sell_quantity']     : 1.0;
+        $qtyStep    = isset($input['quantity_step'])         ? (float)$input['quantity_step']         : 1.0;
+        $defSellQty = isset($input['default_sell_quantity']) ? (float)$input['default_sell_quantity'] : 1.0;
+        if (!validateUnit($invUnit, $ALLOWED_UNITS)) jsonOut(['success'=>false,'error'=>'Invalid inventory unit.']);
+        if ($minSellQty <= 0)  jsonOut(['success'=>false,'error'=>'Min sell quantity must be greater than 0.']);
+        if ($qtyStep <= 0)     jsonOut(['success'=>false,'error'=>'Quantity step must be greater than 0.']);
+        $input['inventory_unit']        = $invUnit;
+        $input['allows_decimal']        = $allowsDec;
+        $input['min_sell_quantity']     = $minSellQty;
+        $input['quantity_step']         = $qtyStep;
+        $input['default_sell_quantity'] = $defSellQty;
         $result = addProduct($input);
         if ($result['success']) {
             try {
@@ -31,7 +50,8 @@ switch ($action) {
                     'PRODUCT_CREATED',
                     0, $stock, $stock,
                     $sessionUserId, $sessionUsername,
-                    'Product created via inventory management'
+                    'Product created via inventory management',
+                    $invUnit
                 );
                 $conn->close();
             } catch (Exception $e) { error_log($e->getMessage()); }
@@ -44,7 +64,7 @@ switch ($action) {
 
         $name          = trim($input['name'] ?? '');
         $selling_price = (float)($input['selling_price'] ?? 0);
-        $stock         = (int)($input['stock'] ?? 0);
+        $stock         = round((float)($input['stock'] ?? 0), 3);
 
         if (!$name)            jsonOut(['success' => false, 'error' => 'Product name is required.']);
         if ($selling_price<=0) jsonOut(['success' => false, 'error' => 'Selling price must be greater than 0.']);
@@ -62,21 +82,31 @@ switch ($action) {
             $st->close();
         }
 
-        // Fetch current stock before update
-        $st = $conn->prepare('SELECT stock, name FROM products WHERE id=? LIMIT 1');
+        // Fetch current stock AND unit before update
+        $st = $conn->prepare('SELECT stock, name, inventory_unit FROM products WHERE id=? LIMIT 1');
         $st->bind_param('i', $id); $st->execute();
         $before = $st->get_result()->fetch_assoc(); $st->close();
-        $stockBefore = $before ? (int)$before['stock'] : 0;
+        $stockBefore   = $before ? (float)$before['stock'] : 0.0;
+        $unitBefore    = $before ? ($before['inventory_unit'] ?? 'pcs') : 'pcs';
 
-        $category   = $input['category']       ?? '';
-        $unit       = $input['unit']            ?? '';
-        $cost_price = (float)($input['cost_price'] ?? 0);
-        $min_stock  = (int)($input['min_stock_alert'] ?? 0);
+        $category      = $input['category'] ?? '';
+        $unit          = $input['unit']      ?? '';
+        $invUnit       = trim($input['inventory_unit'] ?? 'pcs');
+        $allowsDec     = isset($input['allows_decimal']) ? (int)$input['allows_decimal'] : 0;
+        $minSellQty    = isset($input['min_sell_quantity'])     ? (float)$input['min_sell_quantity']     : 1.0;
+        $quantityStep  = isset($input['quantity_step'])         ? (float)$input['quantity_step']         : 1.0;
+        $defaultSellQty= isset($input['default_sell_quantity']) ? (float)$input['default_sell_quantity'] : 1.0;
+        $cost_price    = (float)($input['cost_price'] ?? 0);
+        $min_stock     = (int)($input['min_stock_alert'] ?? 0);
+
+        if (!validateUnit($invUnit, $ALLOWED_UNITS)) jsonOut(['success'=>false,'error'=>'Invalid inventory unit.']);
+        if ($minSellQty <= 0)   jsonOut(['success'=>false,'error'=>'Min sell quantity must be greater than 0.']);
+        if ($quantityStep <= 0) jsonOut(['success'=>false,'error'=>'Quantity step must be greater than 0.']);
 
         $st = $conn->prepare(
-            'UPDATE products SET sku=?,name=?,category=?,unit=?,cost_price=?,selling_price=?,stock=?,min_stock_alert=? WHERE id=?'
+            'UPDATE products SET sku=?,name=?,category=?,unit=?,inventory_unit=?,allows_decimal=?,min_sell_quantity=?,quantity_step=?,default_sell_quantity=?,cost_price=?,selling_price=?,stock=?,min_stock_alert=? WHERE id=?'
         );
-        $st->bind_param('ssssddiii', $sku, $name, $category, $unit, $cost_price, $selling_price, $stock, $min_stock, $id);
+        $st->bind_param('sssssidddddiii', $sku, $name, $category, $unit, $invUnit, $allowsDec, $minSellQty, $quantityStep, $defaultSellQty, $cost_price, $selling_price, $stock, $min_stock, $id);
         $ok = $st->execute(); $err = $st->error;
         $st->close();
 
@@ -87,7 +117,9 @@ switch ($action) {
                     $id, $name, 'PRODUCT_UPDATED',
                     $stockBefore, $stock - $stockBefore, $stock,
                     $sessionUserId, $sessionUsername,
-                    'Product details updated'
+                    'Product details updated',
+                    $unitBefore,
+                    $invUnit
                 );
             } catch (Exception $e) { error_log($e->getMessage()); }
         }
@@ -96,22 +128,34 @@ switch ($action) {
 
     case 'adjust_stock':
         $id  = (int)($input['id']  ?? 0);
-        $qty = (int)($input['qty'] ?? 0);
-        if (!$id)  jsonOut(['success'=>false,'error'=>'Invalid ID.']);
-        if (!$qty) jsonOut(['success'=>false,'error'=>'Quantity cannot be zero.']);
+        $raw = $input['qty'] ?? 0;
+        if (!$id) jsonOut(['success'=>false,'error'=>'Invalid ID.']);
 
         $conn = getConnection();
-        $st = $conn->prepare('SELECT stock, name FROM products WHERE id=? AND deleted=0 AND deleted_at IS NULL LIMIT 1');
+        $st = $conn->prepare('SELECT stock, name, allows_decimal, min_sell_quantity, inventory_unit FROM products WHERE id=? AND deleted=0 AND deleted_at IS NULL LIMIT 1');
         $st->bind_param('i', $id); $st->execute();
         $res = $st->get_result()->fetch_assoc(); $st->close();
         if (!$res) { $conn->close(); jsonOut(['success'=>false,'error'=>'Product not found.']); }
 
-        $stockBefore = (int)$res['stock'];
-        $newStock    = $stockBefore + $qty;
+        $allows  = (bool)$res['allows_decimal'];
+        $minSell = (float)$res['min_sell_quantity'];
+        $qty     = normalizeQuantity($raw);
+        if ($qty === null) { $conn->close(); jsonOut(['success'=>false,'error'=>'Invalid quantity.']); }
+
+        // For removals, validate the absolute value
+        $absQty = abs($qty);
+        $err = validateQuantityPrecision($absQty, $allows, $minSell);
+        if ($err) { $conn->close(); jsonOut(['success'=>false,'error'=>$err]); }
+
+        // Determine direction from original input sign
+        $qty = (float)$raw < 0 ? -$absQty : $absQty;
+
+        $stockBefore = (float)$res['stock'];
+        $newStock    = round($stockBefore + $qty, 3);
         if ($newStock < 0) { $conn->close(); jsonOut(['success'=>false,'error'=>'Stock cannot go below zero.']); }
 
         $st = $conn->prepare('UPDATE products SET stock=? WHERE id=?');
-        $st->bind_param('ii', $newStock, $id);
+        $st->bind_param('di', $newStock, $id);
         $ok = $st->execute(); $st->close();
 
         if ($ok) {
@@ -123,7 +167,8 @@ switch ($action) {
                     $id, $res['name'], $actionType,
                     $stockBefore, $qty, $newStock,
                     $sessionUserId, $sessionUsername,
-                    $notes
+                    $notes,
+                    $res['inventory_unit'] ?? 'pcs'
                 );
             } catch (Exception $e) { error_log($e->getMessage()); }
         }
@@ -135,7 +180,7 @@ switch ($action) {
         if (!$id) jsonOut(['success'=>false,'error'=>'Invalid ID.']);
 
         $conn = getConnection();
-        $st = $conn->prepare('SELECT name, stock FROM products WHERE id=? LIMIT 1');
+        $st = $conn->prepare('SELECT name, stock, inventory_unit FROM products WHERE id=? LIMIT 1');
         $st->bind_param('i', $id); $st->execute();
         $prod = $st->get_result()->fetch_assoc(); $st->close();
 
@@ -150,7 +195,8 @@ switch ($action) {
                     $id, $prod['name'], 'PRODUCT_DELETED',
                     (int)$prod['stock'], 0, (int)$prod['stock'],
                     $sessionUserId, $sessionUsername,
-                    'Product removed from inventory'
+                    'Product removed from inventory',
+                    $prod['inventory_unit'] ?? 'pcs'
                 );
             } catch (Exception $e) { error_log($e->getMessage()); }
         }

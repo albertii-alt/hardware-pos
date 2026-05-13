@@ -80,7 +80,7 @@ class OrderRepository
     public function insertOrderItem(
         int   $orderId,
         int   $productId,
-        int   $quantity,
+        float $quantity,
         float $unitPrice,
         float $total
     ): void {
@@ -88,7 +88,7 @@ class OrderRepository
             'INSERT INTO order_items (order_id, product_id, quantity, unit_price, total)
              VALUES (?, ?, ?, ?, ?)'
         );
-        $stmt->bind_param('iiidd', $orderId, $productId, $quantity, $unitPrice, $total);
+        $stmt->bind_param('iiddd', $orderId, $productId, $quantity, $unitPrice, $total);
         if (!$stmt->execute()) {
             throw new RuntimeException(
                 'Failed to save order item for product ID ' . $productId . ': ' . $stmt->error
@@ -203,7 +203,7 @@ class OrderRepository
     public function findItemsByOrderId(int $orderId): array
     {
         $stmt = $this->conn->prepare(
-            'SELECT oi.product_id, oi.quantity, oi.unit_price, oi.total, p.name, p.sku
+            'SELECT oi.product_id, oi.quantity, oi.unit_price, oi.total, p.name, p.sku, p.inventory_unit
              FROM order_items oi
              JOIN products p ON p.id = oi.product_id
              WHERE oi.order_id = ?

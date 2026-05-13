@@ -128,7 +128,7 @@ class ReportService
     public function getLowStockProducts(): array
     {
         $stmt = $this->conn->prepare(
-            'SELECT sku, name, category, stock, min_stock_alert
+            'SELECT sku, name, category, stock, min_stock_alert, inventory_unit, allows_decimal, quantity_step
              FROM products
              WHERE stock <= min_stock_alert AND deleted = 0
              ORDER BY stock ASC'
@@ -257,6 +257,44 @@ class ReportService
             'top_product'              => $topProduct,
             'critical_low_stock_count' => $criticalLow,
         ];
+    }
+
+    public function getLowestMeasuredStock(): ?array
+    {
+        $stmt = $this->conn->prepare(
+            'SELECT name, stock, inventory_unit
+             FROM products
+             WHERE allows_decimal = 1 AND deleted = 0 AND deleted_at IS NULL AND stock > 0
+             ORDER BY stock ASC
+             LIMIT 1'
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $row ?: null;
+    }
+
+    public function getMostSoldMeasuredProduct(): ?array
+    {
+        $monthStart = date('Y-m-01') . ' 00:00:00';
+        $monthEnd   = date('Y-m-t')  . ' 23:59:59';
+        $stmt = $this->conn->prepare(
+            'SELECT p.name, p.inventory_unit, SUM(oi.quantity) AS total_qty
+             FROM order_items oi
+             JOIN orders   o ON o.id = oi.order_id
+             JOIN products p ON p.id = oi.product_id
+             WHERE o.order_date BETWEEN ? AND ?
+               AND o.status = "completed"
+               AND p.allows_decimal = 1
+             GROUP BY p.id, p.name, p.inventory_unit
+             ORDER BY total_qty DESC
+             LIMIT 1'
+        );
+        $stmt->bind_param('ss', $monthStart, $monthEnd);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $row ?: null;
     }
 
     // ── Phase 7B: Profit Analytics ─────────────────────────────────────────────

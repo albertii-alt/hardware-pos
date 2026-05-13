@@ -8,6 +8,7 @@
 define('APP_ROOT', dirname(__DIR__));
 
 require_once APP_ROOT . '/app/helpers/error_handler.php';
+require_once APP_ROOT . '/app/helpers/quantity_helper.php';
 require_once APP_ROOT . '/app/core/Database.php';
 require_once APP_ROOT . '/app/core/Auth.php';
 require_once APP_ROOT . '/app/core/Audit.php';

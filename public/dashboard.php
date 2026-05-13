@@ -35,6 +35,8 @@ $stockRisk           = $report->getStockRiskProducts();
 $deliveryStats       = $report->getDeliveryCompletionStats();
 $deliveryStatusDist  = $report->getDeliveryStatusDistribution();
 $muniBreakdown       = $report->getMunicipalityDeliveryBreakdown(8);
+$lowestMeasured      = $report->getLowestMeasuredStock();
+$mostSoldMeasured    = $report->getMostSoldMeasuredProduct();
 $insightSvc          = new InsightService($conn, $report);
 $smartInsights       = $insightSvc->generateInsights();
 
@@ -574,6 +576,36 @@ $retailVal        = (float)$inventoryValuation['retail_value'];
           <div class="fs-4 fw-bold <?= $delivSuccessRate >= 90 ? 'text-success' : ($delivSuccessRate < 70 ? 'text-danger' : '') ?>">
             <?= $delivSuccessRate ?>%
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Operational Measured Insights -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100" style="border-left:3px solid #0dcaf0">
+        <div class="card-body py-3">
+          <div class="text-muted small mb-1"><i class="bi bi-droplet me-1"></i>Lowest Measured Stock</div>
+          <?php if ($lowestMeasured): ?>
+          <div class="fw-semibold"><?= htmlspecialchars($lowestMeasured['name']) ?></div>
+          <div class="text-info fw-bold"><?= number_format((float)$lowestMeasured['stock'], 3) ?> <?= htmlspecialchars($lowestMeasured['inventory_unit']) ?> remaining</div>
+          <?php else: ?>
+          <div class="text-muted small">No measured products in stock.</div>
+          <?php endif; ?>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100" style="border-left:3px solid #6f42c1">
+        <div class="card-body py-3">
+          <div class="text-muted small mb-1"><i class="bi bi-bar-chart me-1"></i>Most Sold Measured (Month)</div>
+          <?php if ($mostSoldMeasured): ?>
+          <div class="fw-semibold"><?= htmlspecialchars($mostSoldMeasured['name']) ?></div>
+          <div class="fw-bold" style="color:#6f42c1"><?= number_format((float)$mostSoldMeasured['total_qty'], 3) ?> <?= htmlspecialchars($mostSoldMeasured['inventory_unit']) ?> sold</div>
+          <?php else: ?>
+          <div class="text-muted small">No measured product sales this month.</div>
+          <?php endif; ?>
         </div>
       </div>
     </div>

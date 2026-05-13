@@ -264,6 +264,34 @@ layoutStart('Lumina POS');
 <!-- Receipt print target (outside modal to avoid double print) -->
 <div id="receipt-print"></div>
 
+<!-- Quantity Modal for measured products -->
+<div class="modal fade" id="qtyModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="qm-product-name">Enter Quantity</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="qm-product-id">
+        <div id="qm-error" class="alert alert-danger py-2 small d-none"></div>
+        <div class="d-flex justify-content-between text-muted small mb-1">
+          <span>Stock: <strong id="qm-stock"></strong></span>
+          <span>Price: <strong id="qm-price"></strong></span>
+        </div>
+        <div class="text-muted small mb-3">Min qty: <strong id="qm-min"></strong></div>
+        <div id="qm-presets" class="d-flex flex-wrap gap-1 mb-2"></div>
+        <label class="form-label form-label-sm fw-semibold">Quantity</label>
+        <input type="number" id="qm-qty" class="form-control" min="0.001" step="0.001" placeholder="0.000" inputmode="decimal">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="btn-qm-add"><i class="bi bi-plus-circle me-1"></i>Add to Cart</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Receipt Modal with mobile fullscreen -->
 <div class="modal fade" id="receiptModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered modal-fullscreen-mobile">
@@ -382,23 +410,26 @@ function renderProducts() {
     col.innerHTML = `
       <div class="card h-100 ${outOfStock ? 'opacity-50' : ''}" data-id="${p.id}">
         <div class="card-body p-2 d-flex flex-column">
-          <div class="d-flex justify-content-between align-items-start mb-1">
+          <div class="d-flex flex-wrap gap-1 mb-1">
             <span class="badge bg-secondary badge-stock">${escHtml(p.category || '—')}</span>
             <span class="badge ${isLowStock ? 'bg-warning text-dark' : (parseInt(p.stock) <= 0 ? 'bg-danger' : 'bg-success')} badge-stock">
-              ${parseInt(p.stock)} left ${isLowStock ? '⚠️' : ''}
+              ${parseInt(p.stock)} ${escHtml(p.inventory_unit || 'pcs')} ${isLowStock ? '⚠️' : ''}
             </span>
           </div>
           <div class="fw-semibold lh-sm mb-1" style="font-size:.85rem">${escHtml(p.name)}</div>
           <div class="text-muted" style="font-size:.75rem">${escHtml(p.sku || '')}</div>
-          <div class="mt-auto pt-2 d-flex justify-content-between align-items-center">
+          <div class="mt-auto pt-2">
             <span class="fw-bold text-primary">₱${parseFloat(p.selling_price).toFixed(2)}</span>
-            ${inCart > 0 ? `<span class="badge bg-warning text-dark">${inCart} in cart</span>` : ''}
+            <span class="text-muted" style="font-size:.72rem">/ ${escHtml(p.inventory_unit || 'pcs')}</span>
           </div>
         </div>
         <div class="card-footer p-1">
-          <button class="btn btn-sm btn-primary w-100" onclick="addToCart(${p.id})"
+          <button class="btn btn-sm w-100 ${inCart > 0 ? 'btn-warning text-dark' : 'btn-primary'}" onclick="handleAddToCart(${p.id})"
             ${outOfStock ? 'disabled' : ''}>
-            <i class="bi bi-plus-circle"></i> Add
+            ${inCart > 0
+              ? `<i class="bi bi-check-circle"></i> ${inCart} in cart`
+              : `<i class="bi bi-plus-circle"></i> Add`
+            }
           </button>
         </div>
       </div>`;
@@ -469,7 +500,7 @@ function showAutocomplete(filterText) {
         <small class="item-sku">${skuHighlighted}</small>
         ${parseInt(p.stock) <= parseInt(p.min_stock_alert || 0) ? '<span class="low-stock-badge">Low Stock</span>' : ''}
       </div>
-      <div class="item-price">₱${parseFloat(p.selling_price).toFixed(2)}</div>
+      <div class="item-price">₱${parseFloat(p.selling_price).toFixed(2)} <span style="font-size:.7rem;color:#6c757d">/ ${escHtml(p.inventory_unit || 'pcs')}</span></div>
     `;
     
     item.onclick = () => {
@@ -536,31 +567,92 @@ function quickSkuAdd(sku) {
 }
 
 // ─── Cart logic with low stock warnings ──────────────────────────────────────
-function addToCart(productId) {
+function handleAddToCart(productId) {
   const p = ALL_PRODUCTS.find(x => x.id == productId);
   if (!p) return;
-  const maxStock = parseInt(p.stock);
-  const isLowStock = maxStock <= parseInt(p.min_stock_alert || 0);
-  
+  if (p.allows_decimal == 1) {
+    openQtyModal(productId);
+  } else {
+    addToCart(productId, 1);
+  }
+}
+
+function openQtyModal(productId) {
+  const p = ALL_PRODUCTS.find(x => x.id == productId);
+  if (!p) return;
+  const minQty  = parseFloat(p.min_sell_quantity)  || 0.001;
+  const step    = parseFloat(p.quantity_step)       || minQty;
+  const defQty  = parseFloat(p.default_sell_quantity) || step;
+  const maxStock= parseFloat(p.stock);
+
+  document.getElementById('qm-product-name').textContent = p.name;
+  document.getElementById('qm-stock').textContent = parseFloat(p.stock).toFixed(3) + ' ' + (p.inventory_unit || 'pcs');
+  document.getElementById('qm-price').textContent = '\u20b1' + parseFloat(p.selling_price).toFixed(2) + ' / ' + (p.inventory_unit || 'pcs');
+  document.getElementById('qm-min').textContent   = minQty.toFixed(3) + ' (step: ' + step.toFixed(3) + ')';
+
+  const qtyInput = document.getElementById('qm-qty');
+  qtyInput.value = Math.min(defQty, maxStock).toFixed(3);
+  qtyInput.step  = step;
+  qtyInput.min   = minQty;
+  qtyInput.max   = maxStock;
+  document.getElementById('qm-product-id').value = productId;
+  document.getElementById('qm-error').classList.add('d-none');
+
+  // Build preset buttons
+  const presetsEl = document.getElementById('qm-presets');
+  presetsEl.innerHTML = '';
+  const presetMultiples = [1, 2, 4, 10];
+  presetMultiples.forEach(m => {
+    const val = Math.round(step * m * 1000) / 1000;
+    if (val > maxStock) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-sm btn-outline-secondary';
+    btn.textContent = val % 1 === 0 ? val : val.toFixed(3).replace(/\.?0+$/, '');
+    btn.onclick = () => { qtyInput.value = val.toFixed(3); qtyInput.focus(); };
+    presetsEl.appendChild(btn);
+  });
+
+  new bootstrap.Modal(document.getElementById('qtyModal')).show();
+  setTimeout(() => { qtyInput.focus(); qtyInput.select(); }, 300);
+}
+
+function addToCart(productId, qty) {
+  const p = ALL_PRODUCTS.find(x => x.id == productId);
+  if (!p) return;
+  const maxStock   = parseFloat(p.stock);
+  const minQty     = parseFloat(p.min_sell_quantity) || 1;
+  const isDecimal  = p.allows_decimal == 1;
+  const isLowStock = maxStock <= parseFloat(p.min_stock_alert || 0);
+  const addQty     = parseFloat(qty) || (isDecimal ? minQty : 1);
+
   if (cart[productId]) {
-    if (cart[productId].quantity >= maxStock) {
-      showOrderError(`Only ${maxStock} unit(s) of "${p.name}" available.`);
+    const newQty = Math.round((cart[productId].quantity + addQty) * 1000) / 1000;
+    if (newQty > maxStock) {
+      showOrderError(`Only ${isDecimal ? maxStock.toFixed(3) : maxStock} ${p.inventory_unit || 'pcs'} of "${p.name}" available.`);
       return;
     }
-    cart[productId].quantity++;
+    cart[productId].quantity = newQty;
   } else {
-    cart[productId] = { 
-      id: productId, 
-      name: p.name, 
-      price: parseFloat(p.selling_price), 
-      quantity: 1,
+    if (addQty > maxStock) {
+      showOrderError(`Only ${isDecimal ? maxStock.toFixed(3) : maxStock} ${p.inventory_unit || 'pcs'} available.`);
+      return;
+    }
+    cart[productId] = {
+      id: productId,
+      name: p.name,
+      price: parseFloat(p.selling_price),
+      quantity: addQty,
       stock: maxStock,
-      lowStock: isLowStock
+      lowStock: isLowStock,
+      unit: p.inventory_unit || 'pcs',
+      allowsDecimal: isDecimal,
+      minQty: minQty
     };
   }
-  
-  if (isLowStock && cart[productId].quantity === 1) {
-    showOrderError(`⚠️ Low stock warning: Only ${maxStock} left of "${p.name}"`, 2000);
+
+  if (isLowStock && cart[productId].quantity === addQty) {
+    showOrderError(`⚠️ Low stock warning: Only ${isDecimal ? maxStock.toFixed(3) : maxStock} ${p.inventory_unit || 'pcs'} left of "${p.name}"`, 2000);
   }
   
   renderCart();
@@ -574,13 +666,21 @@ function removeFromCart(productId) {
 }
 
 function setQty(productId, qty) {
-  qty = parseInt(qty);
+  qty = Math.round(parseFloat(qty) * 1000) / 1000;
   if (isNaN(qty) || qty <= 0) { removeFromCart(productId); return; }
-  const p = ALL_PRODUCTS.find(x => x.id == productId);
-  const maxStock = p ? parseInt(p.stock) : Infinity;
+  const p        = ALL_PRODUCTS.find(x => x.id == productId);
+  const maxStock = p ? parseFloat(p.stock) : Infinity;
+  const minQty   = p ? (parseFloat(p.min_sell_quantity) || 1) : 1;
+  const step     = p ? (parseFloat(p.quantity_step) || minQty) : 1;
   if (qty > maxStock) {
-    showOrderError(`Only ${maxStock} available. Setting to max.`);
+    showOrderError(`Only ${p.allows_decimal == 1 ? maxStock.toFixed(3) : maxStock} available. Setting to max.`);
     qty = maxStock;
+  }
+  if (qty < minQty) qty = minQty;
+  // Snap to nearest valid step
+  if (p && p.allows_decimal == 1 && step > 0) {
+    qty = Math.round(Math.round(qty / step) * step * 1000) / 1000;
+    if (qty < minQty) qty = step;
   }
   cart[productId].quantity = qty;
   renderCart();
@@ -609,18 +709,24 @@ function renderCart() {
     const isLowStock = p && parseInt(p.stock) <= parseInt(p.min_stock_alert || 0);
     const rowClass = isLowStock && item.quantity > 0 ? 'cart-row-low-stock' : '';
     
+    const isDecimal = item.allowsDecimal;
+    const step      = item.minQty || 1;
+    const qtyDisplay = isDecimal ? item.quantity.toFixed(3) : Math.round(item.quantity);
     const tr = document.createElement('tr');
     tr.className = rowClass;
     tr.innerHTML = `
       <td class="align-middle" style="max-width:110px;word-break:break-word">
         ${escHtml(item.name)}
+        <span class="text-muted" style="font-size:.72rem"> (${escHtml(item.unit || 'pcs')})</span>
         ${isLowStock ? '<br><small class="text-warning">⚠️ Low Stock</small>' : ''}
       </td>
-      <td class="align-middle text-center" style="min-width:110px">
+      <td class="align-middle text-center" style="min-width:120px">
         <div class="d-flex align-items-center justify-content-center gap-1">
-          <button class="btn btn-outline-secondary cart-qty-btn" style="min-width:44px;min-height:44px;" onclick="setQty(${item.id}, ${item.quantity - 1})">−</button>
-          <input type="number" class="form-control form-control-sm text-center p-0" style="width:50px" value="${item.quantity}" min="1" onchange="setQty(${item.id}, this.value)">
-          <button class="btn btn-outline-secondary cart-qty-btn" style="min-width:44px;min-height:44px;" onclick="setQty(${item.id}, ${item.quantity + 1})">+</button>
+          <button class="btn btn-outline-secondary cart-qty-btn" style="min-width:44px;min-height:44px;" onclick="setQty(${item.id}, ${Math.round((item.quantity - step)*1000)/1000})">−</button>
+          <input type="number" class="form-control form-control-sm text-center p-0" style="width:60px"
+            value="${qtyDisplay}" min="${step}" step="${step}"
+            onchange="setQty(${item.id}, this.value)">
+          <button class="btn btn-outline-secondary cart-qty-btn" style="min-width:44px;min-height:44px;" onclick="setQty(${item.id}, ${Math.round((item.quantity + step)*1000)/1000})">+</button>
         </div>
        </td>
       <td class="align-middle text-end">₱${(item.price * item.quantity).toFixed(2)}</td>
@@ -819,7 +925,7 @@ function resetForm() {
 // ─── Receipt ──────────────────────────────────────────────────────────────────
 function showReceipt(r) {
   const items = (r.items || []).map(i =>
-    `<tr><td class="text-start">${escHtml(i.name)}</td><td class="text-center">${i.quantity}</td>
+    `<tr><td class="text-start">${escHtml(i.name)} <small class="text-muted">${escHtml(i.unit||'')}</small></td><td class="text-center">${i.quantity} ${escHtml(i.unit||'pcs')}</td>
      <td class="text-end">₱${parseFloat(i.price).toFixed(2)}</td>
      <td class="text-end">₱${(i.price * i.quantity).toFixed(2)}</td></tr>`
   ).join('');
@@ -1054,6 +1160,51 @@ async function tsSetBarangay(municipalityId, barangayId) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 renderProducts();
 renderCart();
+
+// ── Quantity modal handler ─────────────────────────────────────────────────────
+document.getElementById('qm-qty').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-qm-add').click(); }
+  if (e.key === 'Escape') { bootstrap.Modal.getInstance(document.getElementById('qtyModal'))?.hide(); }
+});
+
+document.getElementById('btn-qm-add').addEventListener('click', function () {
+  const productId = document.getElementById('qm-product-id').value;
+  const qty       = parseFloat(document.getElementById('qm-qty').value);
+  const errEl     = document.getElementById('qm-error');
+  const p         = ALL_PRODUCTS.find(x => x.id == productId);
+  errEl.classList.add('d-none');
+
+  if (!p || isNaN(qty) || qty <= 0) {
+    errEl.textContent = 'Enter a valid quantity.';
+    errEl.classList.remove('d-none'); return;
+  }
+  const minQty   = parseFloat(p.min_sell_quantity)  || 0.001;
+  const step     = parseFloat(p.quantity_step)       || minQty;
+  const maxStock = parseFloat(p.stock);
+  const rounded  = Math.round(qty * 1000) / 1000;
+
+  if (rounded < minQty) {
+    errEl.textContent = `Minimum quantity is ${minQty.toFixed(3)}.`;
+    errEl.classList.remove('d-none'); return;
+  }
+  if (rounded > maxStock) {
+    errEl.textContent = `Only ${maxStock.toFixed(3)} ${p.inventory_unit || 'pcs'} available.`;
+    errEl.classList.remove('d-none'); return;
+  }
+  if (Math.abs(qty - rounded) > 0.00001) {
+    errEl.textContent = 'Maximum 3 decimal places allowed.';
+    errEl.classList.remove('d-none'); return;
+  }
+  // Step alignment check
+  const remainder = Math.round((rounded % step) * 1000) / 1000;
+  if (remainder > 0.0005 && (step - remainder) > 0.0005) {
+    errEl.textContent = `Quantity must be a multiple of ${step.toFixed(3)}.`;
+    errEl.classList.remove('d-none'); return;
+  }
+  bootstrap.Modal.getInstance(document.getElementById('qtyModal')).hide();
+  addToCart(parseInt(productId), rounded);
+});
+
 
 // ── Tom Select init (AFTER renderProducts to avoid DOM side-effects) ──────────
 let tsMunicipality = null;

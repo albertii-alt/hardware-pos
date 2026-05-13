@@ -37,10 +37,11 @@ function actionBadge(string $type): string {
     return "<span class=\"badge action-badge {$cls}\"><i class=\"bi {$icon} me-1\"></i>{$label}</span>";
 }
 
-function changeDisplay(int $changed, string $type): string {
-    if ($type === 'STOCK_ADD')    return "<span class='text-success fw-semibold'>+{$changed}</span>";
-    if ($type === 'STOCK_REMOVE') return "<span class='text-danger fw-semibold'>{$changed}</span>";
-    return "<span class='text-muted'>{$changed}</span>";
+function changeDisplay(float $changed, string $type): string {
+    $fmt = number_format(abs($changed), 3);
+    if ($type === 'STOCK_ADD')    return "<span class='text-success fw-semibold'>+{$fmt}</span>";
+    if ($type === 'STOCK_REMOVE') return "<span class='text-danger fw-semibold'>{$fmt}</span>";
+    return "<span class='text-muted'>{$fmt}</span>";
 }
 
 require_once APP_ROOT . '/app/layout.php';
@@ -187,9 +188,9 @@ layoutStart('Lumina POS – Inventory History');
               <td class="text-muted" style="font-size:.78rem;white-space:nowrap"><?= htmlspecialchars($m['created_at']) ?></td>
               <td class="fw-semibold"><?= htmlspecialchars($m['product_name_snapshot']) ?></td>
               <td><?= actionBadge($m['action_type']) ?></td>
-              <td class="text-center qty-cell"><?= (int)$m['quantity_before'] ?></td>
-              <td class="text-center qty-cell"><?= changeDisplay((int)$m['quantity_changed'], $m['action_type']) ?></td>
-              <td class="text-center qty-cell fw-semibold"><?= (int)$m['quantity_after'] ?></td>
+              <td class="text-center qty-cell"><?= number_format((float)$m['quantity_before'], 3) ?> <span class="text-muted" style="font-size:.75rem"><?= htmlspecialchars($m['unit_snapshot'] ?? 'pcs') ?></span></td>
+              <td class="text-center qty-cell"><?= changeDisplay((float)$m['quantity_changed'], $m['action_type']) ?> <span class="text-muted" style="font-size:.75rem"><?= htmlspecialchars($m['unit_after_snapshot'] ?? $m['unit_snapshot'] ?? 'pcs') ?></span></td>
+              <td class="text-center qty-cell fw-semibold"><?= number_format((float)$m['quantity_after'], 3) ?> <span class="text-muted fw-normal" style="font-size:.75rem"><?= htmlspecialchars($m['unit_after_snapshot'] ?? $m['unit_snapshot'] ?? 'pcs') ?></span></td>
               <td class="text-muted"><?= htmlspecialchars($m['username'] ?? '—') ?></td>
               <td class="text-muted" style="font-size:.8rem"><?= htmlspecialchars($m['notes'] ?? '') ?></td>
             </tr>

@@ -16,8 +16,8 @@ ksort($grouped);
 
 $categories = array_keys($grouped);
 $total   = count($products);
-$outOf   = count(array_filter($products, fn($p) => (int)$p['stock'] === 0));
-$lowSt   = count(array_filter($products, fn($p) => (int)$p['stock'] > 0 && (int)$p['stock'] <= (int)($p['min_stock_alert'] ?: 5)));
+$outOf   = count(array_filter($products, fn($p) => (float)$p['stock'] <= 0));
+$lowSt   = count(array_filter($products, fn($p) => (float)$p['stock'] > 0 && (float)$p['stock'] <= (float)($p['min_stock_alert'] ?: 5)));
 $healthy = $total - $outOf - $lowSt;
 
 require_once APP_ROOT . '/app/layout.php';
@@ -169,6 +169,11 @@ layoutStart('Lumina POS – Products');
               data-sku="<?= htmlspecialchars($p['sku'] ?? '') ?>"
               data-category="<?= htmlspecialchars($p['category'] ?? '') ?>"
               data-unit="<?= htmlspecialchars($p['unit'] ?? '') ?>"
+              data-inv-unit="<?= htmlspecialchars($p['inventory_unit'] ?? 'pcs') ?>"
+              data-allows-decimal="<?= (int)($p['allows_decimal'] ?? 0) ?>"
+              data-min-sell="<?= number_format((float)($p['min_sell_quantity'] ?? 1), 3, '.', '') ?>"
+              data-qty-step="<?= number_format((float)($p['quantity_step'] ?? 1), 3, '.', '') ?>"
+              data-default-sell="<?= number_format((float)($p['default_sell_quantity'] ?? 1), 3, '.', '') ?>"
               data-cost="<?= $p['cost_price'] ?>"
               data-price="<?= $p['selling_price'] ?>"
               data-stock="<?= $stock ?>"
@@ -176,10 +181,16 @@ layoutStart('Lumina POS – Products');
               data-status="<?= $isOut ? 'out' : ($isLow ? 'low' : 'ok') ?>">
             <td class="text-muted" style="font-size:.78rem"><?= htmlspecialchars($p['sku'] ?? '—') ?></td>
             <td class="fw-semibold"><?= htmlspecialchars($p['name']) ?></td>
-            <td class="text-muted"><?= htmlspecialchars($p['unit'] ?? '—') ?></td>
+            <td>
+              <?= htmlspecialchars($p['unit'] ?? '—') ?>
+              <span class="badge bg-light text-secondary border ms-1" style="font-size:.65rem"><?= htmlspecialchars($p['inventory_unit'] ?? 'pcs') ?></span>
+            </td>
             <td class="text-end">₱<?= number_format((float)$p['cost_price'], 2) ?></td>
             <td class="text-end fw-semibold text-primary">₱<?= number_format((float)$p['selling_price'], 2) ?></td>
-            <td class="text-center fw-bold <?= $isOut ? 'text-danger' : ($isLow ? 'text-warning' : '') ?>"><?= $stock ?></td>
+            <td class="text-center fw-bold <?= $isOut ? 'text-danger' : ($isLow ? 'text-warning' : '') ?>">
+              <?= formatQuantity((float)$p['stock'], (bool)($p['allows_decimal'] ?? false)) ?>
+              <span class="text-muted fw-normal" style="font-size:.75rem"><?= htmlspecialchars($p['inventory_unit'] ?? 'pcs') ?></span>
+            </td>
             <td class="text-center"><span class="badge rounded-pill <?= $badgeCls ?>"><?= $badgeTxt ?></span></td>
             <td class="text-center">
               <div class="d-flex gap-1 justify-content-center">
@@ -238,8 +249,80 @@ layoutStart('Lumina POS – Products');
             <input type="text" id="pf-category" class="form-control form-control-sm" placeholder="e.g. Cement">
           </div>
           <div class="col-sm-6">
-            <label class="form-label form-label-sm mb-1">Unit</label>
+            <label class="form-label form-label-sm mb-1">Unit <span class="text-muted fw-normal">(display label)</span></label>
             <input type="text" id="pf-unit" class="form-control form-control-sm" placeholder="e.g. bag, pcs, box">
+          </div>
+        </div>
+
+        <div class="field-group-label">Inventory Unit</div>
+        <div class="row g-2">
+          <div class="col-sm-4">
+            <label class="form-label form-label-sm mb-1">Inventory Unit <span class="text-danger">*</span></label>
+            <select id="pf-inv-unit" class="form-select form-select-sm">
+              <optgroup label="Pieces">
+                <option value="pcs">pcs</option>
+                <option value="box">box</option>
+                <option value="pack">pack</option>
+                <option value="bundle">bundle</option>
+                <option value="set">set</option>
+                <option value="roll">roll</option>
+              </optgroup>
+              <optgroup label="Weight">
+                <option value="kg">kg</option>
+                <option value="g">g</option>
+                <option value="ton">ton</option>
+              </optgroup>
+              <optgroup label="Length">
+                <option value="meter">meter</option>
+                <option value="ft">ft</option>
+                <option value="inch">inch</option>
+              </optgroup>
+              <optgroup label="Volume">
+                <option value="cubic">cubic</option>
+                <option value="liter">liter</option>
+              </optgroup>
+              <optgroup label="Construction">
+                <option value="bag">bag</option>
+                <option value="sheet">sheet</option>
+                <option value="tube">tube</option>
+                <option value="stick">stick</option>
+                <option value="bar">bar</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="col-sm-4">
+            <label class="form-label form-label-sm mb-1">Min Sell Qty</label>
+            <input type="number" id="pf-min-sell" class="form-control form-control-sm" min="0.001" step="0.001" placeholder="1.000">
+          </div>
+          <div class="col-sm-4 d-flex align-items-end pb-1">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="pf-allows-decimal">
+              <label class="form-check-label form-label-sm" for="pf-allows-decimal">Allow Decimal Qty</label>
+            </div>
+          </div>
+        </div>
+        <div class="row g-2 mt-1">
+          <div class="col-sm-6">
+            <label class="form-label form-label-sm mb-1">Quantity Step</label>
+            <input type="number" id="pf-qty-step" class="form-control form-control-sm" min="0.001" step="0.001" placeholder="1.000">
+            <div class="text-muted" style="font-size:.7rem">Selling increment (e.g. 0.250 for sand)</div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label form-label-sm mb-1">Default Sell Qty</label>
+            <input type="number" id="pf-default-sell" class="form-control form-control-sm" min="0.001" step="0.001" placeholder="1.000">
+            <div class="text-muted" style="font-size:.7rem">Auto-filled qty when adding to cart</div>
+          </div>
+        </div>
+        <div class="row g-2 mt-1">
+          <div class="col-sm-6">
+            <label class="form-label form-label-sm mb-1">Quantity Step</label>
+            <input type="number" id="pf-qty-step" class="form-control form-control-sm" min="0.001" step="0.001" placeholder="1.000">
+            <div class="text-muted" style="font-size:.7rem">Selling increment (e.g. 0.250 for sand)</div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label form-label-sm mb-1">Default Sell Qty</label>
+            <input type="number" id="pf-default-sell" class="form-control form-control-sm" min="0.001" step="0.001" placeholder="1.000">
+            <div class="text-muted" style="font-size:.7rem">Auto-filled qty when adding to cart</div>
           </div>
         </div>
 
@@ -259,7 +342,7 @@ layoutStart('Lumina POS – Products');
         <div class="row g-2">
           <div class="col-sm-6">
             <label class="form-label form-label-sm mb-1">Stock Quantity <span class="text-danger">*</span></label>
-            <input type="number" id="pf-stock" class="form-control form-control-sm" min="0" step="1" placeholder="0">
+            <input type="number" id="pf-stock" class="form-control form-control-sm" min="0" step="0.001" placeholder="0">
           </div>
           <div class="col-sm-6">
             <label class="form-label form-label-sm mb-1">Min Stock Alert</label>
@@ -418,15 +501,20 @@ document.addEventListener('click', function (e) {
   if (editBtn) {
     const row = editBtn.closest('tr');
     document.getElementById('productModalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Edit Product';
-    document.getElementById('pf-id').value       = row.dataset.id;
-    document.getElementById('pf-sku').value      = row.dataset.sku;
-    document.getElementById('pf-name').value     = row.dataset.name;
-    document.getElementById('pf-category').value = row.dataset.category;
-    document.getElementById('pf-unit').value     = row.dataset.unit;
-    document.getElementById('pf-cost').value     = row.dataset.cost;
-    document.getElementById('pf-price').value    = row.dataset.price;
-    document.getElementById('pf-stock').value    = row.dataset.stock;
-    document.getElementById('pf-min').value      = row.dataset.min;
+    document.getElementById('pf-id').value            = row.dataset.id;
+    document.getElementById('pf-sku').value           = row.dataset.sku;
+    document.getElementById('pf-name').value          = row.dataset.name;
+    document.getElementById('pf-category').value      = row.dataset.category;
+    document.getElementById('pf-unit').value          = row.dataset.unit;
+    document.getElementById('pf-inv-unit').value      = row.dataset.invUnit || 'pcs';
+    document.getElementById('pf-allows-decimal').checked = row.dataset.allowsDecimal === '1';
+    document.getElementById('pf-min-sell').value      = row.dataset.minSell || '1.000';
+    document.getElementById('pf-qty-step').value      = row.dataset.qtyStep || '1.000';
+    document.getElementById('pf-default-sell').value  = row.dataset.defaultSell || '1.000';
+    document.getElementById('pf-cost').value          = row.dataset.cost;
+    document.getElementById('pf-price').value         = row.dataset.price;
+    document.getElementById('pf-stock').value         = row.dataset.stock;
+    document.getElementById('pf-min').value           = row.dataset.min;
     document.getElementById('product-form-error').classList.add('d-none');
     new bootstrap.Modal(document.getElementById('productModal')).show();
     return;
@@ -464,7 +552,12 @@ document.getElementById('btn-add-product').addEventListener('click', () => {
   ['pf-id','pf-sku','pf-name','pf-category','pf-unit','pf-cost','pf-price','pf-stock'].forEach(id => {
     document.getElementById(id).value = '';
   });
-  document.getElementById('pf-min').value = '5';
+  document.getElementById('pf-min').value          = '5';
+  document.getElementById('pf-inv-unit').value     = 'pcs';
+  document.getElementById('pf-allows-decimal').checked = false;
+  document.getElementById('pf-min-sell').value     = '1.000';
+  document.getElementById('pf-qty-step').value     = '1.000';
+  document.getElementById('pf-default-sell').value = '1.000';
   document.getElementById('product-form-error').classList.add('d-none');
   new bootstrap.Modal(document.getElementById('productModal')).show();
 });
@@ -475,16 +568,21 @@ document.getElementById('btn-save-product').addEventListener('click', async () =
   const errEl = document.getElementById('product-form-error');
   errEl.classList.add('d-none');
   const payload = {
-    action:          id ? 'edit' : 'add',
-    id:              id ? parseInt(id) : undefined,
-    sku:             document.getElementById('pf-sku').value.trim(),
-    name:            document.getElementById('pf-name').value.trim(),
-    category:        document.getElementById('pf-category').value.trim(),
-    unit:            document.getElementById('pf-unit').value.trim(),
-    cost_price:      parseFloat(document.getElementById('pf-cost').value)  || 0,
-    selling_price:   parseFloat(document.getElementById('pf-price').value) || 0,
-    stock:           parseInt(document.getElementById('pf-stock').value)   || 0,
-    min_stock_alert: parseInt(document.getElementById('pf-min').value)     || 0,
+    action:           id ? 'edit' : 'add',
+    id:               id ? parseInt(id) : undefined,
+    sku:              document.getElementById('pf-sku').value.trim(),
+    name:             document.getElementById('pf-name').value.trim(),
+    category:         document.getElementById('pf-category').value.trim(),
+    unit:             document.getElementById('pf-unit').value.trim(),
+    inventory_unit:        document.getElementById('pf-inv-unit').value,
+    allows_decimal:        document.getElementById('pf-allows-decimal').checked ? 1 : 0,
+    min_sell_quantity:     parseFloat(document.getElementById('pf-min-sell').value)    || 1,
+    quantity_step:         parseFloat(document.getElementById('pf-qty-step').value)    || 1,
+    default_sell_quantity: parseFloat(document.getElementById('pf-default-sell').value) || 1,
+    cost_price:       parseFloat(document.getElementById('pf-cost').value)  || 0,
+    selling_price:    parseFloat(document.getElementById('pf-price').value) || 0,
+    stock:            parseInt(document.getElementById('pf-stock').value)   || 0,
+    min_stock_alert:  parseInt(document.getElementById('pf-min').value)     || 0,
   };
   const btn = document.getElementById('btn-save-product');
   btn.disabled = true;
@@ -592,6 +690,24 @@ document.getElementById('btn-confirm-delete').addEventListener('click', async fu
     _deleteTargetId = null;
     _deleteTargetRow = null;
   }
+});
+// ── Smart unit autoset ───────────────────────────────────────────────────────────────────
+const MEASURED_UNITS = new Set(['kg','g','ton','meter','ft','inch','cubic','liter','roll']);
+const UNIT_STEP_DEFAULTS = {
+  kg:0.100, g:0.100, ton:0.100,
+  meter:0.500, ft:0.500, inch:0.500, roll:0.500,
+  cubic:0.250, liter:0.250
+};
+const UNIT_DEFAULT_SELL = { cubic:0.500, liter:0.500 };
+
+document.getElementById('pf-inv-unit').addEventListener('change', function () {
+  const isMeasured = MEASURED_UNITS.has(this.value);
+  document.getElementById('pf-allows-decimal').checked = isMeasured;
+  const step = isMeasured ? (UNIT_STEP_DEFAULTS[this.value] || 0.100) : 1.0;
+  const def  = isMeasured ? (UNIT_DEFAULT_SELL[this.value] || 1.0)    : 1.0;
+  document.getElementById('pf-min-sell').value     = isMeasured ? '0.001' : '1.000';
+  document.getElementById('pf-qty-step').value     = step.toFixed(3);
+  document.getElementById('pf-default-sell').value = def.toFixed(3);
 });
 </script>
 <?php layoutEnd(); ?>
