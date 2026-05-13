@@ -83,7 +83,7 @@ switch ($action) {
         }
 
         // Fetch current stock AND unit before update
-        $st = $conn->prepare('SELECT stock, name, inventory_unit FROM products WHERE id=? LIMIT 1');
+        $st = $conn->prepare('SELECT stock, name, inventory_unit, selling_price, cost_price, category, unit, sku FROM products WHERE id=? LIMIT 1');
         $st->bind_param('i', $id); $st->execute();
         $before = $st->get_result()->fetch_assoc(); $st->close();
         $stockBefore   = $before ? (float)$before['stock'] : 0.0;
@@ -103,6 +103,19 @@ switch ($action) {
         if ($minSellQty <= 0)   jsonOut(['success'=>false,'error'=>'Min sell quantity must be greater than 0.']);
         if ($quantityStep <= 0) jsonOut(['success'=>false,'error'=>'Quantity step must be greater than 0.']);
 
+        // Build specific change summary before UPDATE
+        $changes = [];
+        if ($before) {
+            if (trim($before['name'])           !== $name)                                    $changes[] = 'Name: ' . $before['name'] . ' → ' . $name;
+            if (trim($before['sku'] ?? '')       !== $sku)                                    $changes[] = 'SKU: ' . ($before['sku'] ?: '—') . ' → ' . ($sku ?: '—');
+            if (trim($before['category'] ?? '') !== $category)                               $changes[] = 'Category: ' . ($before['category'] ?: '—') . ' → ' . ($category ?: '—');
+            if (trim($before['unit'] ?? '')      !== $unit)                                   $changes[] = 'Display unit: ' . ($before['unit'] ?: '—') . ' → ' . ($unit ?: '—');
+            if (($before['inventory_unit'] ?? 'pcs') !== $invUnit)                           $changes[] = 'Inventory unit: ' . $before['inventory_unit'] . ' → ' . $invUnit;
+            if (abs((float)$before['selling_price'] - $selling_price) > 0.001)               $changes[] = 'Price: ₱' . number_format((float)$before['selling_price'], 2) . ' → ₱' . number_format($selling_price, 2);
+            if (abs((float)$before['cost_price']    - $cost_price)    > 0.001)               $changes[] = 'Cost: ₱' . number_format((float)$before['cost_price'], 2) . ' → ₱' . number_format($cost_price, 2);
+        }
+        $updateNote = !empty($changes) ? implode('; ', $changes) : 'Product details updated';
+
         $st = $conn->prepare(
             'UPDATE products SET sku=?,name=?,category=?,unit=?,inventory_unit=?,allows_decimal=?,min_sell_quantity=?,quantity_step=?,default_sell_quantity=?,cost_price=?,selling_price=?,stock=?,min_stock_alert=? WHERE id=?'
         );
@@ -112,12 +125,28 @@ switch ($action) {
 
         if ($ok) {
             try {
-                $svc = new InventoryMovementService($conn);
+                $svc        = new InventoryMovementService($conn);
+                $stockDiff  = round($stock - $stockBefore, 3);
+
+                // If stock changed via edit, log a dedicated stock movement
+                if (abs($stockDiff) > 0.0001) {
+                    $actionType = $stockDiff > 0 ? 'STOCK_ADD' : 'STOCK_REMOVE';
+                    $svc->logMovement(
+                        $id, $name, $actionType,
+                        $stockBefore, $stockDiff, $stock,
+                        $sessionUserId, $sessionUsername,
+                        ($stockDiff > 0 ? 'Added' : 'Removed') . ' ' . abs($stockDiff) . ' ' . $invUnit . ' via product edit',
+                        $unitBefore,
+                        $invUnit
+                    );
+                }
+
+                // Always log the product update
                 $svc->logMovement(
                     $id, $name, 'PRODUCT_UPDATED',
-                    $stockBefore, $stock - $stockBefore, $stock,
+                    $stockBefore, $stockDiff, $stock,
                     $sessionUserId, $sessionUsername,
-                    'Product details updated',
+                    $updateNote,
                     $unitBefore,
                     $invUnit
                 );
