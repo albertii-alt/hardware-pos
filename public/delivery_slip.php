@@ -100,8 +100,8 @@ $subtotal = (float)$order['total_amount'] - (float)$order['delivery_fee'];
   .btn-action {
     flex: 1; padding: 10px 0; font-size: 13px;
     border: none; border-radius: 4px; cursor: pointer;
-    font-family: inherit; font-weight: 600; text-align: center;
-    text-decoration: none;
+    font-family: inherit; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
   }
   .btn-print { background: #212529; color: #fff; }
   .btn-print:hover { background: #444; }
@@ -208,7 +208,7 @@ $subtotal = (float)$order['total_amount'] - (float)$order['delivery_fee'];
 
 <div class="action-bar no-print">
   <button class="btn-action btn-print" onclick="window.print()">&#128438; Print Slip</button>
-  <a class="btn-action btn-back" href="deliveries.php">&#8592; Back to Deliveries</a>
+  <button class="btn-action btn-back" onclick="window.close()">&#8592; Back to Deliveries</button>
 </div>
 
 <script>

@@ -200,7 +200,7 @@ function methodLabel(string $m): string {
 
 <div class="action-bar no-print">
   <button class="btn-action btn-print" onclick="window.print()">&#128438; Print Receipt</button>
-  <a class="btn-action btn-close-tab" href="index.php">&#8592; Back to POS</a>
+  <button class="btn-action btn-close-tab" onclick="window.close()">&#8592; Back to POS</button>
 </div>
 
 <script>

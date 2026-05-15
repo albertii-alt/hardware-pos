@@ -807,7 +807,7 @@ function showSuccessToast(message, redirectUrl = null) {
   
   if (redirectUrl) {
     setTimeout(() => {
-      window.location.href = redirectUrl;
+      window.open(redirectUrl, '_blank');
     }, 2000);
   }
 }
@@ -900,7 +900,9 @@ async function submitOrder() {
       showSuccessToast(`Order #${orderId} completed`);
       setTimeout(() => showReceipt(data.receipt_data), 2000);
     }
-    
+
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
     return true;
 
   } catch (err) {
