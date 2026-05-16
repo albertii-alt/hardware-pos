@@ -11,7 +11,7 @@ $products     = getAllProducts();
 $productsJson = json_encode($products, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT);
 
 require_once APP_ROOT . '/app/layout.php';
-layoutStart('Lumina POS');
+layoutStart('Hardware POS');
 ?>
 <link rel="stylesheet" href="/lumina-pos/assets/vendor/tom-select/tom-select.bootstrap5.min.css">
 <script src="/lumina-pos/assets/vendor/tom-select/tom-select.complete.min.js"></script>

@@ -140,15 +140,18 @@ function importProductsFromCSV(string $filePath): array {
         $category      = $row['category'];
         $unit          = $row['unit'];
         $inv_unit      = $row['inventory_unit'] ?? $unit ?: 'pcs';
-        $measured      = in_array($inv_unit, ['kg','g','ton','meter','ft','inch','cubic','liter','roll'], true);
+        $measured      = in_array($inv_unit, ['kg','g','ton','sack','meter','ft','inch','cubic','m2','m3','liter','gallon','roll'], true);
         $allows_dec    = $measured ? 1 : 0;
         $min_sell      = $measured ? 0.001 : 1.0;
         $qty_step      = $measured ? (match($inv_unit) {
-            'kg','g','ton' => 0.100, 'meter','ft','inch','roll' => 0.500,
-            'cubic','liter' => 0.250, default => 0.100
+            'kg','g','ton','sack' => 0.100,
+            'meter','ft','inch','roll' => 0.500,
+            'cubic','m2','m3','liter','gallon' => 0.250,
+            default => 0.100
         }) : 1.0;
         $def_sell      = $measured ? (match($inv_unit) {
-            'cubic','liter' => 0.500, default => 1.0
+            'cubic','m3','liter','gallon' => 0.500,
+            default => 1.0
         }) : 1.0;
         $cost_price    = (float)$row['cost_price'];
         $selling_price = (float)$row['selling_price'];

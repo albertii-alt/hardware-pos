@@ -13,7 +13,7 @@ $outOfStock = array_filter($lowStock, fn($p) => (int)$p['stock'] === 0);
 $lowOnly    = array_filter($lowStock, fn($p) => (int)$p['stock'] > 0);
 
 require_once APP_ROOT . '/app/layout.php';
-layoutStart('Lumina POS – Low Stock');
+layoutStart('Hardware POS – Low Stock');
 ?>
 <style>
   .ls-toolbar { position:sticky; top:53px; z-index:90; background:#f4f6f9; padding:.75rem 0 .5rem; }

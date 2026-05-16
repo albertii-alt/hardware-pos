@@ -40,7 +40,7 @@ function payBadge(string $method): string {
 }
 
 require_once APP_ROOT . '/app/layout.php';
-layoutStart('Lumina POS – Sales History');
+layoutStart('Hardware POS – Sales History');
 ?>
 <style>
   .sales-toolbar { position:sticky; top:53px; z-index:90; background:#f4f6f9; padding:.75rem 0 .5rem; }

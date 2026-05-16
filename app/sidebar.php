@@ -24,7 +24,7 @@ function navLink(string $href, string $icon, string $label, string $active = '')
   <!-- Brand -->
   <div class="sidebar-brand">
     <i class="bi bi-shop-window brand-icon"></i>
-    <span class="sidebar-label fw-bold">Lumina POS</span>
+    <span class="sidebar-label fw-bold">Hardware POS</span>
   </div>
 
   <!-- User -->
@@ -50,8 +50,9 @@ function navLink(string $href, string $icon, string $label, string $active = '')
     <div class="nav-section-label">Management</div>
     <?php navLink('dashboard.php',      'bi-speedometer2',      'Dashboard',       isActive('dashboard.php')) ?>
     <?php navLink('report.php',         'bi-bar-chart-line',    'Reports',         isActive('report.php')) ?>
-    <?php navLink('closing_report.php', 'bi-file-earmark-text', 'Closing Report',  isActive('closing_report.php')) ?>
-    <?php navLink('sales_history.php',  'bi-receipt-cutoff',    'Sales History',   isActive('sales_history.php')) ?>
+    <?php navLink('closing_report.php',  'bi-file-earmark-text', 'Closing Report',  isActive('closing_report.php')) ?>
+    <?php navLink('closing_history.php', 'bi-clock-history',     'Closing History', isActive('closing_history.php')) ?>
+    <?php navLink('sales_history.php',   'bi-receipt-cutoff',    'Sales History',   isActive('sales_history.php')) ?>
 
     <!-- INVENTORY — owner only -->
     <div class="nav-section-label">Inventory</div>

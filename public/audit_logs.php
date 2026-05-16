@@ -86,7 +86,7 @@ function actionBadge(string $action): string {
 }
 
 require_once APP_ROOT . '/app/layout.php';
-layoutStart('Lumina POS – Audit Logs');
+layoutStart('Hardware POS – Audit Logs');
 ?>
 <?php layoutHeader('Audit Logs', 'bi-shield-check'); ?>
 <div class="container-fluid px-4">

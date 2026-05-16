@@ -21,7 +21,7 @@ $lowSt   = count(array_filter($products, fn($p) => (float)$p['stock'] > 0 && (fl
 $healthy = $total - $outOf - $lowSt;
 
 require_once APP_ROOT . '/app/layout.php';
-layoutStart('Lumina POS – Products');
+layoutStart('Hardware POS – Products');
 ?>
 <style>
   /* ── Toolbar ── */
@@ -266,11 +266,15 @@ layoutStart('Lumina POS – Products');
                 <option value="bundle">bundle</option>
                 <option value="set">set</option>
                 <option value="roll">roll</option>
+                <option value="panel">panel</option>
+                <option value="pallet">pallet</option>
+                <option value="crate">crate</option>
               </optgroup>
               <optgroup label="Weight">
                 <option value="kg">kg</option>
                 <option value="g">g</option>
                 <option value="ton">ton</option>
+                <option value="sack">sack</option>
               </optgroup>
               <optgroup label="Length">
                 <option value="meter">meter</option>
@@ -279,7 +283,10 @@ layoutStart('Lumina POS – Products');
               </optgroup>
               <optgroup label="Volume">
                 <option value="cubic">cubic</option>
+                <option value="m2">m²</option>
+                <option value="m3">m³</option>
                 <option value="liter">liter</option>
+                <option value="gallon">gallon</option>
               </optgroup>
               <optgroup label="Construction">
                 <option value="bag">bag</option>
@@ -287,6 +294,9 @@ layoutStart('Lumina POS – Products');
                 <option value="tube">tube</option>
                 <option value="stick">stick</option>
                 <option value="bar">bar</option>
+                <option value="can">can</option>
+                <option value="pail">pail</option>
+                <option value="drum">drum</option>
               </optgroup>
             </select>
           </div>
@@ -680,13 +690,13 @@ document.getElementById('btn-confirm-delete').addEventListener('click', async fu
   }
 });
 // ── Smart unit autoset ───────────────────────────────────────────────────────────────────
-const MEASURED_UNITS = new Set(['kg','g','ton','meter','ft','inch','cubic','liter','roll']);
+const MEASURED_UNITS = new Set(['kg','g','ton','sack','meter','ft','inch','cubic','m2','m3','liter','gallon','roll']);
 const UNIT_STEP_DEFAULTS = {
-  kg:0.100, g:0.100, ton:0.100,
+  kg:0.100, g:0.100, ton:0.100, sack:0.100,
   meter:0.500, ft:0.500, inch:0.500, roll:0.500,
-  cubic:0.250, liter:0.250
+  cubic:0.250, m2:0.250, m3:0.250, liter:0.250, gallon:0.250
 };
-const UNIT_DEFAULT_SELL = { cubic:0.500, liter:0.500 };
+const UNIT_DEFAULT_SELL = { cubic:0.500, m3:0.500, liter:0.500, gallon:0.500 };
 
 document.getElementById('pf-inv-unit').addEventListener('change', function () {
   const isMeasured = MEASURED_UNITS.has(this.value);

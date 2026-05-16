@@ -5,8 +5,6 @@ requireRole('owner');
 require_once APP_ROOT . '/app/Services/ReportService.php';
 
 
-logAction('VIEW_CLOSING_REPORT');
-
 $today = date('Y-m-d');
 
 $conn   = getConnection();
@@ -17,7 +15,58 @@ $paymentBreakdown = $report->getTodayPaymentBreakdown();
 $bestSellers      = $report->getBestSellers($today, $today);
 $lowStock         = $report->getLowStockProducts();
 
+// Check if today already finalized
+$chkStmt = $conn->prepare('SELECT id, created_at FROM daily_closures WHERE business_date = ? LIMIT 1');
+$chkStmt->bind_param('s', $today);
+$chkStmt->execute();
+$existingClosure = $chkStmt->get_result()->fetch_assoc();
+$chkStmt->close();
+
 $conn->close();
+
+// ── Silently auto-archive any missed past days ────────────────────────────────
+$autoArchiveResult = null;
+try {
+    $autoConn   = getConnection();
+    $autoReport = new ReportService($autoConn);
+    $autoToday  = date('Y-m-d');
+
+    $autoStmt = $autoConn->prepare(
+        'SELECT DISTINCT DATE(order_date) AS business_date
+         FROM orders
+         WHERE DATE(order_date) < ?
+           AND status = "completed"
+           AND DATE(order_date) NOT IN (SELECT business_date FROM daily_closures)
+         ORDER BY business_date ASC'
+    );
+    $autoStmt->bind_param('s', $autoToday);
+    $autoStmt->execute();
+    $missingDates = $autoStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $autoStmt->close();
+
+    if (!empty($missingDates)) {
+        $autoInsert = $autoConn->prepare(
+            'INSERT IGNORE INTO daily_closures
+                (business_date, summary_json, payment_breakdown_json, best_sellers_json, low_stock_json, closed_by_user_id, closing_notes)
+             VALUES (?, ?, ?, ?, ?, NULL, "Auto-archived by system")'
+        );
+        $autoArchived = 0;
+        foreach ($missingDates as $row) {
+            $d    = $row['business_date'];
+            $s    = json_encode($autoReport->getRangeSummary($d, $d),          JSON_UNESCAPED_UNICODE);
+            $p    = json_encode($autoReport->getPaymentMethodBreakdown($d, $d), JSON_UNESCAPED_UNICODE);
+            $b    = json_encode($autoReport->getBestSellers($d, $d, 5),         JSON_UNESCAPED_UNICODE);
+            $l    = json_encode($autoReport->getLowStockProducts(),             JSON_UNESCAPED_UNICODE);
+            $autoInsert->bind_param('sssss', $d, $s, $p, $b, $l);
+            if ($autoInsert->execute()) $autoArchived++;
+        }
+        $autoInsert->close();
+        if ($autoArchived > 0) logAction('AUTO_ARCHIVE_CLOSURES', $autoArchived);
+    }
+    $autoConn->close();
+} catch (Exception $e) {
+    error_log('Auto-archive failed: ' . $e->getMessage());
+}
 
 function peso(float $v): string { return '&#8369;' . number_format($v, 2); }
 function methodLabel(string $m): string {
@@ -34,14 +83,37 @@ require_once APP_ROOT . '/app/layout.php';
 layoutStart('Daily Closing Report');
 ?>
 <?php layoutHeader('Daily Closing Report', 'bi-file-earmark-text'); ?>
+<style>
+  @media print {
+    .no-print, .page-header { display: none !important; }
+  }
+</style>
 <div class="container-fluid px-4">
 <div class="report-wrapper">
 
   <!-- Toolbar -->
-  <div class="d-flex justify-content-end mb-3 no-print">
-    <a href="export_orders.php?type=today" class="btn btn-sm btn-outline-success">
-      <i class="bi bi-download me-1"></i>Export Closing Report CSV
+  <div class="d-flex justify-content-end gap-2 mb-3 no-print flex-wrap">
+    <a href="closing_report.php" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
     </a>
+    <a href="export_orders.php?type=today" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="closing_history.php" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-clock-history me-1"></i>Closing History
+    </a>
+    <?php if ($existingClosure): ?>
+    <span class="btn btn-sm btn-success disabled">
+      <i class="bi bi-check-circle me-1"></i>Day Already Finalized
+    </span>
+    <?php else: ?>
+    <button class="btn btn-sm btn-danger" id="btn-finalize" data-bs-toggle="modal" data-bs-target="#finalizeModal">
+      <i class="bi bi-lock me-1"></i>Finalize Day Closing
+    </button>
+    <?php endif; ?>
   </div>
 
   <!-- Print header (visible on print only) -->
@@ -189,5 +261,70 @@ layoutStart('Daily Closing Report');
 </div><!-- /report-wrapper -->
 </div><!-- /container -->
 
+<!-- Finalize Confirmation Modal -->
+<?php if (!$existingClosure): ?>
+<div class="modal fade" id="finalizeModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-lock me-2 text-danger"></i>Finalize Day Closing</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>You are about to finalize the closing report for <strong><?= $today ?></strong>.</p>
+        <p class="text-muted small">This will create an immutable snapshot of today's sales data. This action cannot be undone.</p>
+        <div id="finalize-error" class="alert alert-danger py-2 d-none"></div>
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Closing Notes <span class="text-muted">(optional)</span></label>
+          <textarea id="closing-notes" class="form-control form-control-sm" rows="2" placeholder="Any notes for this closing..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger" id="btn-confirm-finalize">
+          <i class="bi bi-lock me-1"></i>Confirm Finalize
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+document.getElementById('btn-confirm-finalize').addEventListener('click', async function () {
+  const btn   = this;
+  const errEl = document.getElementById('finalize-error');
+  const notes = document.getElementById('closing-notes').value.trim();
+  errEl.classList.add('d-none');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Finalizing…';
+  try {
+    const res  = await fetch('api/closing_history_api.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'finalize_closure', closing_notes: notes })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      errEl.textContent = data.error;
+      errEl.classList.remove('d-none');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-lock me-1"></i>Confirm Finalize';
+      return;
+    }
+    bootstrap.Modal.getInstance(document.getElementById('finalizeModal')).hide();
+    // Replace finalize button with green badge
+    const finalizeBtn = document.getElementById('btn-finalize');
+    const badge = document.createElement('span');
+    badge.className = 'btn btn-sm btn-success disabled';
+    badge.innerHTML = '<i class="bi bi-check-circle me-1"></i>Day Already Finalized';
+    finalizeBtn.replaceWith(badge);
+  } catch (e) {
+    errEl.textContent = 'Network error.';
+    errEl.classList.remove('d-none');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-lock me-1"></i>Confirm Finalize';
+  }
+});
+</script>
+<?php endif; ?>
 
 <?php layoutEnd(); ?>

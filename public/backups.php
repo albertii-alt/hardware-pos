@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
 $backups = $service->listBackups();
 
 require_once APP_ROOT . '/app/layout.php';
-layoutStart('Lumina POS – Backups');
+layoutStart('Hardware POS – Backups');
 ?>
 <?php layoutHeader('Database Backups', 'bi-database-down'); ?>
 <div class="container-fluid px-4">

@@ -45,7 +45,7 @@ function changeDisplay(float $changed, string $type): string {
 }
 
 require_once APP_ROOT . '/app/layout.php';
-layoutStart('Lumina POS – Inventory History');
+layoutStart('Hardware POS – Inventory History');
 ?>
 <style>
   /* ── Toolbar ── */

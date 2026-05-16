@@ -34,7 +34,7 @@ function methodLabel(string $m): string {
 }
 
 require_once APP_ROOT . '/app/layout.php';
-layoutStart('Lumina POS – Reports');
+layoutStart('Hardware POS – Reports');
 ?>
 <?php layoutHeader('Sales Reports', 'bi-bar-chart-line'); ?>
 <div class="container-fluid px-4">

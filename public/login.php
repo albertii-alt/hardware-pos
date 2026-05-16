@@ -85,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lumina POS – Login</title>
+<title>HARDWARE POS – Login</title>
 <link href="/lumina-pos/assets/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
 <link href="/lumina-pos/assets/vendor/bootstrap-icons/bootstrap-icons.min.css" rel="stylesheet">
 <style>
@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <div class="text-center mb-4">
       <i class="bi bi-shop fs-1 text-dark"></i>
-      <h4 class="fw-bold mt-1 mb-0">Lumina POS</h4>
+      <h4 class="fw-bold mt-1 mb-0">Hardware POS</h4>
       <span class="text-muted small">Sign in to continue</span>
     </div>
 

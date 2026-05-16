@@ -10,7 +10,7 @@ $users = $conn->query(
 $conn->close();
 
 require_once APP_ROOT . '/app/layout.php';
-layoutStart('Lumina POS – Users');
+layoutStart('Hardware POS – Users');
 ?>
 <?php layoutHeader('User Management', 'bi-people'); ?>
 <div class="container-fluid px-4">

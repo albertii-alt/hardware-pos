@@ -45,7 +45,7 @@ $conn->close();
 function peso(float $v): string { return '&#8369;' . number_format($v, 2); }
 
 require_once APP_ROOT . '/app/layout.php';
-layoutStart('Lumina POS – Dashboard');
+layoutStart('Hardware POS – Dashboard');
 ?>
 <style>
   .chart-card { border-radius: .5rem; border: none; box-shadow: 0 1px 3px rgba(0,0,0,.08); }

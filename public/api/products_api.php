@@ -16,7 +16,7 @@ $sessionUsername = $_SESSION['username'] ?? null;
 
 function jsonOut(array $data): void { echo json_encode($data); exit; }
 
-$ALLOWED_UNITS = ['pcs','box','pack','bundle','set','roll','kg','g','ton','meter','ft','inch','cubic','liter','bag','sheet','tube','stick','bar'];
+$ALLOWED_UNITS = ['pcs','box','pack','bundle','set','roll','panel','pallet','crate','kg','g','ton','sack','meter','ft','inch','cubic','m2','m3','liter','gallon','bag','sheet','tube','stick','bar','can','pail','drum'];
 
 function validateUnit(string $unit, array $allowed): bool {
     return in_array($unit, $allowed, true);

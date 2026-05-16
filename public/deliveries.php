@@ -67,7 +67,7 @@ function buildUrl(array $override): string {
 }
 
 require_once APP_ROOT . '/app/layout.php';
-layoutStart('Lumina POS – Deliveries');
+layoutStart('Hardware POS – Deliveries');
 ?>
 <style>
   .del-toolbar { position:sticky; top:53px; z-index:90; background:#f4f6f9; padding:.75rem 0 .5rem; }
