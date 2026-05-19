@@ -20,6 +20,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'demo_reset') {
+    $currentUserId = (int)$_SESSION['user_id'];
+    $conn = getConnection();
+    $conn->begin_transaction();
+    try {
+        $conn->query('SET FOREIGN_KEY_CHECKS = 0');
+        $conn->query('TRUNCATE TABLE order_items');
+        $conn->query('TRUNCATE TABLE orders');
+        $conn->query('TRUNCATE TABLE daily_closures');
+        $conn->query('TRUNCATE TABLE audit_logs');
+        $conn->query('TRUNCATE TABLE inventory_movements');
+        $conn->query('TRUNCATE TABLE products');
+        $stmt = $conn->prepare('DELETE FROM users WHERE id != ?');
+        $stmt->bind_param('i', $currentUserId);
+        $stmt->execute();
+        $stmt->close();
+        $conn->query('SET FOREIGN_KEY_CHECKS = 1');
+        $conn->commit();
+        logAction('DEMO_RESET', null, 'Full demo reset performed.');
+        $message = 'Demo reset complete. All data cleared except your account.';
+    } catch (Throwable $e) {
+        $conn->rollback();
+        $conn->query('SET FOREIGN_KEY_CHECKS = 1');
+        $msgType = 'danger';
+        $message = 'Reset failed: ' . $e->getMessage();
+    }
+    $conn->close();
+}
+
 $backups = $service->listBackups();
 
 require_once APP_ROOT . '/app/layout.php';
@@ -37,6 +66,14 @@ layoutStart('Hardware POS – Backups');
       </button>
     </form>
     <span class="text-muted small">Backups stored in <code>storage/backups/</code></span>
+    <div class="ms-auto">
+      <form method="post" onsubmit="return confirmDemoReset()">
+        <input type="hidden" name="action" value="demo_reset">
+        <button type="submit" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-trash3 me-1"></i> Demo Reset
+        </button>
+      </form>
+    </div>
   </div>
 
   <?php if ($message): ?>
@@ -116,6 +153,9 @@ layoutStart('Hardware POS – Backups');
 <script>
 function confirmBackup() {
   return confirm('Create a new database backup now?');
+}
+function confirmDemoReset() {
+  return confirm('This will delete ALL orders, products, closures, audit logs, and other user accounts.\n\nYour account will be kept.\n\nThis cannot be undone. Continue?');
 }
 </script>
 <?php layoutEnd(); ?>

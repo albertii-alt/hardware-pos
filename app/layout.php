@@ -24,7 +24,13 @@ function layoutStart(string $title = 'Lumina POS'): void {
   }
 
   /* ── Base ──────────────────────────────────────────────── */
-  body { background:#f4f6f9; font-size:.92rem; }
+  body {
+    background: #f4f6f9;
+    font-size: .92rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
   /* ── Sidebar ───────────────────────────────────────────── */
   #sidebar {
